@@ -1,0 +1,47 @@
+import type { MusicSegment } from '../audio/types.js';
+
+export type SegmentLabel = MusicSegment['label'];
+export type CombatIntent = 'warmup' | 'pressure' | 'chase' | 'lockdown' | 'burst' | 'release';
+export type MovementMode = 'idle' | 'wander' | 'dash' | 'orbit' | 'shake';
+export type AttackMode = 'none' | 'sparse-ring' | 'aimed-burst' | 'screen-ring' | 'lane-burst';
+export type TransitionMode = 'snap' | 'blend';
+
+export interface BehaviorGenerationInput {
+  bpm: number;
+  beatGrid: number[];
+  downbeat: number;
+  segments: MusicSegment[];
+  confidence: {
+    overall: number;
+    segmentation: number;
+    tempo: number;
+  };
+}
+
+export interface BehaviorModule {
+  id: string;
+  start: number;
+  end: number;
+  segmentLabel: SegmentLabel;
+  intent: CombatIntent;
+  movement: MovementMode;
+  attack: AttackMode;
+  bulletCount: number;
+  bulletSpeed: number;
+  fireWindowBeats: number;
+  warningIntensity: number;
+  pressureLevel: number;
+  transitionIn: TransitionMode;
+  transitionOut: TransitionMode;
+}
+
+export interface BehaviorTimeline {
+  source: 'rules' | 'llm';
+  modules: BehaviorModule[];
+  generatedAt: number;
+  metadata: {
+    modelName?: string;
+    fallbackUsed: boolean;
+    validationWarnings: string[];
+  };
+}

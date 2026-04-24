@@ -1,0 +1,112 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #151515;
+  color: #f5f5f5;
+  font-family: system-ui, sans-serif;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  width: 100%;
+  height: 100%;
+}
+
+.panel {
+  border-right: 1px solid #333;
+  padding: 24px;
+  background: #202020;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+p {
+  color: #cfcfcf;
+  line-height: 1.5;
+}
+
+.difficulty {
+  display: grid;
+  grid-template-columns: 48px 1fr 52px;
+  gap: 10px;
+  align-items: center;
+  margin: 24px 0;
+}
+
+.drop-zone {
+  display: grid;
+  min-height: 130px;
+  place-items: center;
+  padding: 18px;
+  border: 2px dashed #707070;
+  cursor: pointer;
+  text-align: center;
+}
+
+.drop-zone.dragging {
+  border-color: #f4d35e;
+  background: #2a2a2a;
+}
+
+.drop-zone input {
+  display: none;
+}
+
+.status,
+.result {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #3a3a3a;
+  color: #e4e4e4;
+}
+
+.warmup-tap {
+  width: 100%;
+  margin-top: 16px;
+  min-height: 72px;
+  border: 1px solid #595959;
+  background: #262626;
+  color: #f0f0f0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.warmup-tap.listening {
+  background: #3a3a3a;
+  border-color: #f4d35e;
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  background: #111;
+}
+
+@media (max-width: 800px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .panel {
+    border-right: 0;
+    border-bottom: 1px solid #333;
+  }
+}
