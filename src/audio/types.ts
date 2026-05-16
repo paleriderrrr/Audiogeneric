@@ -1,3 +1,11 @@
+export interface DecodedAudioBuffer {
+  length: number;
+  duration: number;
+  sampleRate: number;
+  numberOfChannels: number;
+  getChannelData(channel: number): Float32Array;
+}
+
 export interface BeatPoint {
   time: number;
   strength: number;
@@ -32,8 +40,8 @@ export interface CalibrationResult {
   confirmed: boolean;
 }
 
-export interface AudioAnalysis {
-  buffer: AudioBuffer;
+export interface AudioAnalysis<TBuffer extends DecodedAudioBuffer = AudioBuffer> {
+  buffer: TBuffer;
   bpm: number;
   firstBeat: number;
   duration: number;

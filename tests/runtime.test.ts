@@ -147,6 +147,51 @@ test('ignores stale audio onended callbacks after a restart', async () => {
   }
 });
 
+test('emits a single result when the active audio source ends naturally', async () => {
+  const originalAudioContext = globalThis.AudioContext;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  const originalDevicePixelRatio = globalThis.window?.devicePixelRatio;
+  const originalPerformance = globalThis.performance;
+  const results: string[] = [];
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+  globalThis.performance = { now: () => 0 } as Performance;
+  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+  globalThis.AudioContext = class {
+    constructor() {
+      return new FakeAudioContext();
+    }
+  } as unknown as typeof AudioContext;
+
+  try {
+    const runtime = new GameRuntime(createCanvas(rect), {
+      onStatus() {},
+      onResult(message) {
+        results.push(message);
+      }
+    });
+
+    await runtime.start(createAnalysis(12), 1);
+    const source = (runtime as unknown as { source: FakeAudioBufferSourceNode }).source;
+    source?.onended?.();
+
+    assert.equal(results.length, 1);
+    assert.equal((runtime as unknown as { source: FakeAudioBufferSourceNode | null }).source, null);
+    assert.equal((runtime as unknown as { audioContext: FakeAudioContext | null }).audioContext, null);
+  } finally {
+    globalThis.AudioContext = originalAudioContext;
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    globalThis.performance = originalPerformance;
+    if (originalDevicePixelRatio !== undefined && globalThis.window) {
+      globalThis.window.devicePixelRatio = originalDevicePixelRatio;
+    }
+  }
+});
+
 test('rebuilds arena bounds when resizing during an active run', async () => {
   const originalAudioContext = globalThis.AudioContext;
   const originalRequestAnimationFrame = globalThis.requestAnimationFrame;

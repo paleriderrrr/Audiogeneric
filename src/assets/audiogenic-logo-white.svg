@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 180" role="img" aria-labelledby="title">
+  <title id="title">AUDIOgenic</title>
+  <rect width="820" height="180" fill="none"/>
+  <g fill="#fff">
+    <text x="410" y="104" text-anchor="middle"
+      font-family="Inter, Arial, Helvetica, sans-serif"
+      font-size="78"
+      font-weight="800"
+      letter-spacing="0">AUDIOgenic</text>
+    <rect x="146" y="124" width="528" height="3"/>
+    <rect x="246" y="139" width="328" height="2"/>
+  </g>
+</svg>

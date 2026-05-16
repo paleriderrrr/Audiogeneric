@@ -1,15 +1,35 @@
-import type { AttackMode, CombatIntent, MovementMode, SegmentLabel, TransitionMode } from './types.js';
+import type {
+  AttackMode,
+  CombatIntent,
+  MovementMode,
+  PhaseRole,
+  SegmentLabel,
+  TransitionMode
+} from './types.js';
 
 export interface NumericRange {
   min: number;
   max: number;
 }
 
+export interface SegmentPreset {
+  id: string;
+  intent: CombatIntent;
+  preferredBeats: 2 | 4 | 8;
+  energyRange: NumericRange;
+  bpmBand: 'any' | 'slow' | 'mid' | 'fast';
+  phasePattern: PhaseRole[];
+  movementByRole: Record<PhaseRole, MovementMode>;
+  attackByRole: Record<PhaseRole, AttackMode>;
+  pressureBias: number;
+  bulletCountBias: number;
+  bulletSpeedBias: number;
+  warningBias: number;
+}
+
 export interface SegmentProfile {
   label: SegmentLabel;
   defaultIntent: CombatIntent;
-  movementPool: MovementMode[];
-  attackPool: AttackMode[];
   pressureRange: NumericRange;
   bulletCountRange: NumericRange;
   bulletSpeedRange: NumericRange;
@@ -17,82 +37,491 @@ export interface SegmentProfile {
   preferredTransitionIn: TransitionMode;
   preferredTransitionOut: TransitionMode;
   forbiddenAttacks?: AttackMode[];
+  presets: SegmentPreset[];
 }
+
+const STATIC_PROBE: Record<PhaseRole, MovementMode> = {
+  setup: 'idle',
+  pressure: 'wander',
+  burst: 'wander',
+  reposition: 'idle',
+  recovery: 'idle'
+};
+
+const LIGHT_RING: Record<PhaseRole, AttackMode> = {
+  setup: 'none',
+  pressure: 'sparse-ring',
+  burst: 'sparse-ring',
+  reposition: 'none',
+  recovery: 'none'
+};
 
 export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
   intro: {
     label: 'intro',
     defaultIntent: 'warmup',
-    movementPool: ['idle', 'wander'],
-    attackPool: ['none', 'sparse-ring'],
-    pressureRange: { min: 5, max: 20 },
-    bulletCountRange: { min: 0, max: 5 },
-    bulletSpeedRange: { min: 90, max: 140 },
-    warningRange: { min: 0.1, max: 0.3 },
+    pressureRange: { min: 5, max: 22 },
+    bulletCountRange: { min: 0, max: 6 },
+    bulletSpeedRange: { min: 90, max: 145 },
+    warningRange: { min: 0.1, max: 0.32 },
     preferredTransitionIn: 'blend',
     preferredTransitionOut: 'blend',
-    forbiddenAttacks: ['screen-ring', 'lane-burst', 'aimed-burst']
+    forbiddenAttacks: ['screen-ring', 'lane-burst', 'aimed-burst'],
+    presets: [
+      {
+        id: 'intro-static-probe',
+        intent: 'warmup',
+        preferredBeats: 8,
+        energyRange: { min: 0, max: 0.35 },
+        bpmBand: 'any',
+        phasePattern: ['setup', 'pressure', 'recovery'],
+        movementByRole: STATIC_PROBE,
+        attackByRole: LIGHT_RING,
+        pressureBias: -4,
+        bulletCountBias: -2,
+        bulletSpeedBias: -10,
+        warningBias: -0.04
+      },
+      {
+        id: 'intro-light-pursuit',
+        intent: 'warmup',
+        preferredBeats: 4,
+        energyRange: { min: 0.18, max: 0.55 },
+        bpmBand: 'mid',
+        phasePattern: ['setup', 'pressure', 'reposition', 'recovery'],
+        movementByRole: {
+          setup: 'wander',
+          pressure: 'wander',
+          burst: 'wander',
+          reposition: 'orbit',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'sparse-ring',
+          burst: 'sparse-ring',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 2,
+        bulletCountBias: 0,
+        bulletSpeedBias: 0,
+        warningBias: 0.02
+      }
+    ]
   },
   verse: {
     label: 'verse',
     defaultIntent: 'pressure',
-    movementPool: ['wander', 'orbit', 'dash'],
-    attackPool: ['sparse-ring', 'aimed-burst'],
-    pressureRange: { min: 20, max: 50 },
-    bulletCountRange: { min: 4, max: 10 },
-    bulletSpeedRange: { min: 120, max: 185 },
-    warningRange: { min: 0.2, max: 0.45 },
+    pressureRange: { min: 20, max: 58 },
+    bulletCountRange: { min: 4, max: 12 },
+    bulletSpeedRange: { min: 120, max: 195 },
+    warningRange: { min: 0.2, max: 0.48 },
     preferredTransitionIn: 'blend',
     preferredTransitionOut: 'blend',
-    forbiddenAttacks: ['screen-ring']
+    forbiddenAttacks: ['screen-ring'],
+    presets: [
+      {
+        id: 'verse-close-sweep',
+        intent: 'pressure',
+        preferredBeats: 4,
+        energyRange: { min: 0.1, max: 0.5 },
+        bpmBand: 'slow',
+        phasePattern: ['pressure', 'reposition', 'pressure', 'recovery'],
+        movementByRole: {
+          setup: 'wander',
+          pressure: 'dash',
+          burst: 'dash',
+          reposition: 'orbit',
+          recovery: 'wander'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'melee-sweep',
+          burst: 'aimed-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 3,
+        bulletCountBias: -1,
+        bulletSpeedBias: -12,
+        warningBias: 0.04
+      },
+      {
+        id: 'verse-lateral-pressure',
+        intent: 'pressure',
+        preferredBeats: 4,
+        energyRange: { min: 0.15, max: 0.55 },
+        bpmBand: 'any',
+        phasePattern: ['setup', 'pressure', 'reposition', 'recovery'],
+        movementByRole: {
+          setup: 'wander',
+          pressure: 'wander',
+          burst: 'dash',
+          reposition: 'orbit',
+          recovery: 'wander'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'sparse-ring',
+          burst: 'aimed-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 0,
+        bulletCountBias: 0,
+        bulletSpeedBias: 0,
+        warningBias: 0
+      },
+      {
+        id: 'verse-tracking-poke',
+        intent: 'chase',
+        preferredBeats: 4,
+        energyRange: { min: 0.35, max: 0.72 },
+        bpmBand: 'fast',
+        phasePattern: ['setup', 'pressure', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'orbit',
+          pressure: 'orbit',
+          burst: 'dash',
+          reposition: 'orbit',
+          recovery: 'wander'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'laser-ray',
+          burst: 'aimed-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 6,
+        bulletCountBias: 1,
+        bulletSpeedBias: 10,
+        warningBias: 0.05
+      },
+      {
+        id: 'verse-cutthrough',
+        intent: 'pressure',
+        preferredBeats: 2,
+        energyRange: { min: 0.28, max: 0.8 },
+        bpmBand: 'mid',
+        phasePattern: ['setup', 'pressure', 'reposition', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'wander',
+          pressure: 'dash',
+          burst: 'dash',
+          reposition: 'wander',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'sparse-ring',
+          burst: 'aimed-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 4,
+        bulletCountBias: 1,
+        bulletSpeedBias: 8,
+        warningBias: 0.04
+      }
+    ]
   },
   bridge: {
     label: 'bridge',
     defaultIntent: 'chase',
-    movementPool: ['orbit', 'dash'],
-    attackPool: ['sparse-ring', 'aimed-burst'],
-    pressureRange: { min: 35, max: 65 },
-    bulletCountRange: { min: 6, max: 12 },
-    bulletSpeedRange: { min: 140, max: 210 },
-    warningRange: { min: 0.35, max: 0.6 },
+    pressureRange: { min: 34, max: 68 },
+    bulletCountRange: { min: 6, max: 13 },
+    bulletSpeedRange: { min: 140, max: 215 },
+    warningRange: { min: 0.35, max: 0.62 },
     preferredTransitionIn: 'blend',
-    preferredTransitionOut: 'snap'
+    preferredTransitionOut: 'snap',
+    presets: [
+      {
+        id: 'bridge-orbit-windup',
+        intent: 'chase',
+        preferredBeats: 4,
+        energyRange: { min: 0.35, max: 0.75 },
+        bpmBand: 'any',
+        phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'recovery'],
+        movementByRole: {
+          setup: 'orbit',
+          pressure: 'orbit',
+          burst: 'dash',
+          reposition: 'orbit',
+          recovery: 'wander'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'sparse-ring',
+          burst: 'aimed-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 2,
+        bulletCountBias: 1,
+        bulletSpeedBias: 6,
+        warningBias: 0.04
+      },
+      {
+        id: 'bridge-feint-pressure',
+        intent: 'chase',
+        preferredBeats: 2,
+        energyRange: { min: 0.45, max: 0.9 },
+        bpmBand: 'fast',
+        phasePattern: ['setup', 'reposition', 'pressure', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'dash',
+          pressure: 'orbit',
+          burst: 'dash',
+          reposition: 'dash',
+          recovery: 'wander'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'aimed-burst',
+          burst: 'aimed-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 8,
+        bulletCountBias: 2,
+        bulletSpeedBias: 12,
+        warningBias: 0.08
+      }
+    ]
   },
   chorus: {
     label: 'chorus',
     defaultIntent: 'burst',
-    movementPool: ['dash', 'wander', 'shake'],
-    attackPool: ['aimed-burst', 'screen-ring'],
-    pressureRange: { min: 55, max: 85 },
+    pressureRange: { min: 55, max: 88 },
     bulletCountRange: { min: 8, max: 18 },
-    bulletSpeedRange: { min: 160, max: 240 },
-    warningRange: { min: 0.55, max: 0.85 },
+    bulletSpeedRange: { min: 160, max: 242 },
+    warningRange: { min: 0.55, max: 0.88 },
     preferredTransitionIn: 'snap',
-    preferredTransitionOut: 'blend'
+    preferredTransitionOut: 'blend',
+    presets: [
+      {
+        id: 'chorus-spread-drive',
+        intent: 'burst',
+        preferredBeats: 4,
+        energyRange: { min: 0.55, max: 1 },
+        bpmBand: 'any',
+        phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'recovery'],
+        movementByRole: {
+          setup: 'wander',
+          pressure: 'dash',
+          burst: 'dash',
+          reposition: 'wander',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'aimed-burst',
+          burst: 'screen-ring',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 4,
+        bulletCountBias: 2,
+        bulletSpeedBias: 10,
+        warningBias: 0.06
+      },
+      {
+        id: 'chorus-lane-pressure',
+        intent: 'burst',
+        preferredBeats: 2,
+        energyRange: { min: 0.72, max: 1 },
+        bpmBand: 'fast',
+        phasePattern: ['setup', 'pressure', 'reposition', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'dash',
+          pressure: 'dash',
+          burst: 'shake',
+          reposition: 'wander',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'laser-ray',
+          burst: 'explosive-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 8,
+        bulletCountBias: 3,
+        bulletSpeedBias: 14,
+        warningBias: 0.1
+      },
+      {
+        id: 'chorus-center-compress',
+        intent: 'lockdown',
+        preferredBeats: 4,
+        energyRange: { min: 0.9, max: 1 },
+        bpmBand: 'mid',
+        phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'orbit',
+          pressure: 'dash',
+          burst: 'shake',
+          reposition: 'orbit',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'laser-ray',
+          burst: 'explosive-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 10,
+        bulletCountBias: 4,
+        bulletSpeedBias: 8,
+        warningBias: 0.08
+      }
+    ]
   },
   drop: {
     label: 'drop',
     defaultIntent: 'lockdown',
-    movementPool: ['dash', 'shake'],
-    attackPool: ['screen-ring', 'lane-burst', 'aimed-burst'],
     pressureRange: { min: 70, max: 100 },
     bulletCountRange: { min: 10, max: 24 },
-    bulletSpeedRange: { min: 170, max: 250 },
+    bulletSpeedRange: { min: 170, max: 252 },
     warningRange: { min: 0.7, max: 1 },
     preferredTransitionIn: 'snap',
-    preferredTransitionOut: 'blend'
+    preferredTransitionOut: 'blend',
+    presets: [
+      {
+        id: 'drop-burst-wave',
+        intent: 'lockdown',
+        preferredBeats: 2,
+        energyRange: { min: 0.8, max: 1 },
+        bpmBand: 'any',
+        phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'dash',
+          pressure: 'shake',
+          burst: 'shake',
+          reposition: 'dash',
+          recovery: 'orbit'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'lane-burst',
+          burst: 'explosive-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 10,
+        bulletCountBias: 4,
+        bulletSpeedBias: 10,
+        warningBias: 0.1
+      },
+      {
+        id: 'drop-lane-lock',
+        intent: 'lockdown',
+        preferredBeats: 2,
+        energyRange: { min: 0.9, max: 1 },
+        bpmBand: 'fast',
+        phasePattern: ['setup', 'pressure', 'reposition', 'burst', 'recovery'],
+        movementByRole: {
+          setup: 'dash',
+          pressure: 'dash',
+          burst: 'shake',
+          reposition: 'dash',
+          recovery: 'wander'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'charge-strike',
+          burst: 'explosive-burst',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 14,
+        bulletCountBias: 5,
+        bulletSpeedBias: 16,
+        warningBias: 0.12
+      },
+      {
+        id: 'drop-spiral-break',
+        intent: 'burst',
+        preferredBeats: 4,
+        energyRange: { min: 0.78, max: 1 },
+        bpmBand: 'mid',
+        phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'recovery'],
+        movementByRole: {
+          setup: 'orbit',
+          pressure: 'shake',
+          burst: 'dash',
+          reposition: 'orbit',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'screen-ring',
+          burst: 'laser-ray',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 12,
+        bulletCountBias: 4,
+        bulletSpeedBias: 10,
+        warningBias: 0.1
+      }
+    ]
   },
   outro: {
     label: 'outro',
     defaultIntent: 'release',
-    movementPool: ['idle', 'wander'],
-    attackPool: ['none', 'sparse-ring'],
-    pressureRange: { min: 5, max: 25 },
+    pressureRange: { min: 5, max: 26 },
     bulletCountRange: { min: 0, max: 6 },
-    bulletSpeedRange: { min: 90, max: 150 },
-    warningRange: { min: 0.1, max: 0.3 },
+    bulletSpeedRange: { min: 90, max: 152 },
+    warningRange: { min: 0.1, max: 0.32 },
     preferredTransitionIn: 'blend',
     preferredTransitionOut: 'blend',
-    forbiddenAttacks: ['screen-ring', 'lane-burst']
+    forbiddenAttacks: ['screen-ring', 'lane-burst'],
+    presets: [
+      {
+        id: 'outro-fadeout',
+        intent: 'release',
+        preferredBeats: 8,
+        energyRange: { min: 0, max: 0.45 },
+        bpmBand: 'any',
+        phasePattern: ['setup', 'pressure', 'recovery'],
+        movementByRole: STATIC_PROBE,
+        attackByRole: LIGHT_RING,
+        pressureBias: -2,
+        bulletCountBias: -1,
+        bulletSpeedBias: -6,
+        warningBias: -0.02
+      },
+      {
+        id: 'outro-cleanup',
+        intent: 'release',
+        preferredBeats: 4,
+        energyRange: { min: 0.18, max: 0.55 },
+        bpmBand: 'mid',
+        phasePattern: ['setup', 'pressure', 'reposition', 'recovery'],
+        movementByRole: {
+          setup: 'wander',
+          pressure: 'wander',
+          burst: 'wander',
+          reposition: 'orbit',
+          recovery: 'idle'
+        },
+        attackByRole: {
+          setup: 'none',
+          pressure: 'sparse-ring',
+          burst: 'sparse-ring',
+          reposition: 'none',
+          recovery: 'none'
+        },
+        pressureBias: 1,
+        bulletCountBias: 0,
+        bulletSpeedBias: 0,
+        warningBias: 0.02
+      }
+    ]
   }
 };

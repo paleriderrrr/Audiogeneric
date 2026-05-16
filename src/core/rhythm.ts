@@ -31,6 +31,7 @@ export interface RhythmTracker {
   judge(time: number, action: ActionKind): Judgment;
   isOnBeat(time: number): boolean;
   timeToNextBeat(time: number): number;
+  getBeatInterval(): number;
   getStats(): RhythmStats;
 }
 
@@ -89,6 +90,10 @@ export function createRhythmTracker(options: RhythmOptions): RhythmTracker {
       const elapsed = time - state.options.firstBeat;
       const nextIndex = Math.floor(elapsed / interval) + 1;
       return Math.max(0, state.options.firstBeat + nextIndex * interval - time);
+    },
+
+    getBeatInterval() {
+      return beatIntervalSeconds(state.options.bpm);
     },
 
     getStats() {

@@ -44,13 +44,45 @@ export async function createBehaviorTimeline(
 }
 
 function createRuleFallback(input: BehaviorGenerationInput, warnings: string[]): BehaviorTimeline {
+  const modules = normalizeRuleModules(createRuleTimeline(input), input);
   return {
     source: 'rules',
-    modules: createRuleTimeline(input),
+    modules,
     generatedAt: Date.now(),
     metadata: {
       fallbackUsed: warnings.length > 0,
       validationWarnings: warnings
     }
   };
+}
+
+function normalizeRuleModules(modules: BehaviorTimeline['modules'], input: BehaviorGenerationInput): BehaviorTimeline['modules'] {
+  if (modules.length > 0) {
+    return modules;
+  }
+
+  const duration = Math.max(
+    1,
+    input.segments[input.segments.length - 1]?.end ?? 0,
+    input.beatGrid[input.beatGrid.length - 1] ?? 0
+  );
+
+  return [{
+    id: 'fallback-idle-0',
+    presetId: 'fallback-idle',
+    start: 0,
+    end: duration,
+    segmentLabel: 'intro',
+    intent: 'warmup',
+    phaseRole: 'recovery',
+    movement: 'idle',
+    attack: 'none',
+    bulletCount: 0,
+    bulletSpeed: 0,
+    fireWindowBeats: 4,
+    warningIntensity: 0.1,
+    pressureLevel: 5,
+    transitionIn: 'blend',
+    transitionOut: 'blend'
+  }];
 }

@@ -20,14 +20,28 @@ test('maps calm and intense music segments to distinct boss skill modules', () =
   assert.equal(plan[1].movement, 'dash');
   assert.equal(plan[1].attack, 'aimed-burst');
   assert.equal(plan[2].movement, 'shake');
-  assert.equal(plan[2].attack, 'screen-ring');
+  assert.equal(plan[2].attack, 'lane-burst');
   assert.equal(getBehaviorAtTime(plan, 15).label, 'chorus');
 });
 
 test('scales bullet density by segment intensity and difficulty', () => {
-  const low = createBehaviorPlan([{ start: 0, end: 8, label: 'verse', energy: 0.2 }], 120, 0.5);
-  const high = createBehaviorPlan([{ start: 0, end: 8, label: 'chorus', energy: 1 }], 120, 1.5);
+  const segment: MusicSegmentInput = { start: 0, end: 8, label: 'chorus', energy: 0.82 };
+  const low = createBehaviorPlan([segment], 120, 0.5);
+  const high = createBehaviorPlan([segment], 120, 1.8);
 
   assert.equal(low[0].bulletCount < high[0].bulletCount, true);
+  assert.equal(low[0].bulletSpeed < high[0].bulletSpeed, true);
   assert.equal(high[0].warningIntensity > low[0].warningIntensity, true);
+});
+
+test('returns a safe idle behavior before the first scheduled segment starts', () => {
+  const plan = createBehaviorPlan([
+    { start: 4, end: 12, label: 'chorus', energy: 0.82 }
+  ], 120, 1);
+
+  const behavior = getBehaviorAtTime(plan, 1);
+
+  assert.equal(behavior.attack, 'none');
+  assert.equal(behavior.movement, 'idle');
+  assert.equal(behavior.label, 'intro');
 });

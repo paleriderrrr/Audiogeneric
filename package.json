@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -p tsconfig.json && vite build",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/tests/*.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/tests/*.test.js",
+    "test:audio-file": "tsc -p tsconfig.test.json && node dist-test/tests/audio-file-cli.js"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

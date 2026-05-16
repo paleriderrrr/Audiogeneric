@@ -1,13 +1,16 @@
 import type { CalibrationResult, TempoCandidate } from './types.js';
 
+const MIN_CONFIRMED_TAPS = 8;
+const MIN_TAP_INTERVAL_SECONDS = 0.12;
+
 export function calibrateWarmupTaps(input: {
   taps: number[];
   warmupStart: number;
   tempoCandidates: TempoCandidate[];
   suggestedDownbeat: number;
 }): CalibrationResult {
-  const taps = input.taps.slice().sort((a, b) => a - b);
-  if (taps.length < 4) {
+  const taps = normalizeTaps(input.taps);
+  if (taps.length < MIN_CONFIRMED_TAPS) {
     return {
       taps,
       tapDerivedBpm: 0,
@@ -24,6 +27,17 @@ export function calibrateWarmupTaps(input: {
     intervals.push(taps[index] - taps[index - 1]);
   }
   const medianInterval = median(intervals);
+  if (!Number.isFinite(medianInterval) || medianInterval <= 0) {
+    return {
+      taps,
+      tapDerivedBpm: 0,
+      selectedBpm: input.tempoCandidates[0]?.bpm ?? 120,
+      selectedDownbeat: input.suggestedDownbeat,
+      halfDoubleRelation: 'none',
+      tapStability: 0,
+      confirmed: false
+    };
+  }
   const tapDerivedBpm = 60 / medianInterval;
   const candidate = selectCandidate(tapDerivedBpm, input.tempoCandidates);
   const selectedBpm = candidate.matchedBpm;
@@ -40,7 +54,7 @@ export function calibrateWarmupTaps(input: {
     selectedDownbeat,
     halfDoubleRelation: candidate.relation,
     tapStability,
-    confirmed: tapStability > 0.7
+    confirmed: taps.length >= MIN_CONFIRMED_TAPS && tapStability > 0.7
   };
 }
 
@@ -74,10 +88,18 @@ function selectCandidate(tapDerivedBpm: number, candidates: TempoCandidate[]): {
 }
 
 function clampTempo(bpm: number): number {
+  if (!Number.isFinite(bpm) || bpm <= 0) return 120;
   let value = bpm;
   while (value > 180) value /= 2;
   while (value < 60) value *= 2;
   return Math.round(value);
+}
+
+function normalizeTaps(taps: number[]): number[] {
+  return taps
+    .filter((tap) => Number.isFinite(tap))
+    .sort((a, b) => a - b)
+    .filter((tap, index, sorted) => index === 0 || tap - sorted[index - 1] >= MIN_TAP_INTERVAL_SECONDS);
 }
 
 function median(values: number[]): number {
