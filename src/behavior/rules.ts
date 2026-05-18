@@ -23,6 +23,8 @@ export function createRuleTimeline(input: BehaviorGenerationInput): BehaviorModu
     draft = applyTransitionModifier(draft, segment.energy - (previous?.energy ?? segment.energy), profile.preferredTransitionIn);
     draft = applyBpmModifier(draft, input.bpm);
     draft = resolveModes(draft, profile);
+    draft = applySegmentFeatureModifier(draft, input.segmentFeatures?.find((feature) => feature.start === segment.start && feature.end === segment.end)?.recommendedAttack);
+    draft = applyStyleModifier(draft, input.styleProfile?.primaryStyle, segment.energy);
     draft = clampDraft(draft, profile);
     draft = enforceForbidden(draft, profile);
     const module: BehaviorModule = {
@@ -120,6 +122,41 @@ function applyBpmModifier(draft: BehaviorDraft, bpm: number): BehaviorDraft {
     next.bulletCount = Math.max(0, Math.round(next.bulletCount * 0.95));
   }
   return next;
+}
+
+function applyStyleModifier(
+  draft: BehaviorDraft,
+  style: BehaviorGenerationInput['styleProfile'] extends undefined ? never : NonNullable<BehaviorGenerationInput['styleProfile']>['primaryStyle'] | undefined,
+  energy: number
+): BehaviorDraft {
+  const next = { ...draft };
+  if (style === 'rock') {
+    next.warningIntensity += 0.12;
+    next.pressureLevel += energy > 0.55 ? 8 : 3;
+    next.bulletCount += energy > 0.55 ? 2 : 0;
+    if (energy > 0.65) next.attack = 'screen-ring';
+  } else if (style === 'electronic') {
+    next.bulletSpeed *= 1.12;
+    next.warningIntensity -= 0.04;
+    next.pressureLevel += 6;
+    if (energy > 0.45) next.attack = 'lane-burst';
+  } else if (style === 'hiphop') {
+    next.bulletSpeed *= 0.96;
+    if (energy > 0.4) next.attack = 'aimed-burst';
+  } else if (style === 'ambient') {
+    next.bulletCount = Math.round(next.bulletCount * 0.7);
+    next.bulletSpeed *= 0.85;
+    next.warningIntensity += 0.08;
+  }
+  return next;
+}
+
+function applySegmentFeatureModifier(
+  draft: BehaviorDraft,
+  recommendedAttack: BehaviorGenerationInput['segmentFeatures'] extends undefined ? never : NonNullable<BehaviorGenerationInput['segmentFeatures']>[number]['recommendedAttack'] | undefined
+): BehaviorDraft {
+  if (!recommendedAttack) return draft;
+  return { ...draft, attack: recommendedAttack };
 }
 
 function resolveModes(draft: BehaviorDraft, profile: typeof SEGMENT_PROFILES[keyof typeof SEGMENT_PROFILES]): BehaviorDraft {

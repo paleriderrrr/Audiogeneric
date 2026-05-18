@@ -197,8 +197,8 @@ function updatePlayer(world: WorldState, dt: number, input: CombatInput): void {
   }
 
   const length = Math.hypot(input.moveX, input.moveY) || 1;
-  player.x = clamp(player.x + (input.moveX / length) * speed * dt, world.arena.minX, world.arena.maxX);
-  player.y = clamp(player.y + (input.moveY / length) * speed * dt, world.arena.minY, world.arena.maxY);
+  player.x = clamp(player.x + (input.moveX / length) * speed * dt, world.arena.minX + player.radius, world.arena.maxX - player.radius);
+  player.y = clamp(player.y + (input.moveY / length) * speed * dt, world.arena.minY + player.radius, world.arena.maxY - player.radius);
 }
 
 function updateBoss(world: WorldState, time: number): void {
@@ -212,6 +212,9 @@ function updateBoss(world: WorldState, time: number): void {
   } else if (behavior.movement === 'wander') {
     boss.x = clamp(boss.homeX + Math.sin(time * 1.3) * 48, world.arena.minX, world.arena.maxX);
     boss.y = clamp(boss.homeY + Math.cos(time * 0.9) * 28, world.arena.minY, world.arena.maxY);
+  } else if (behavior.movement === 'orbit') {
+    boss.x = clamp(boss.homeX + Math.cos(time * 1.1) * 72, world.arena.minX, world.arena.maxX);
+    boss.y = clamp(boss.homeY + Math.sin(time * 1.1) * 44, world.arena.minY, world.arena.maxY);
   } else if (behavior.movement === 'dash') {
     boss.x = clamp(boss.homeX + Math.sign(Math.sin(time * 2.5)) * 90, world.arena.minX, world.arena.maxX);
     boss.y = clamp(boss.homeY + Math.sin(time * 3.2) * 52, world.arena.minY, world.arena.maxY);
@@ -220,15 +223,18 @@ function updateBoss(world: WorldState, time: number): void {
     boss.y = clamp(boss.homeY + Math.cos(time * 31) * 10, world.arena.minY, world.arena.maxY);
   }
 
-  if (world.rhythm.isOnBeat(time) && time - boss.lastBeatSpawnAt > 0.2) {
+  if (world.rhythm.isOnBeat(time) && canFireOnBeat(world, behavior, time)) {
     boss.lastBeatSpawnAt = time;
     spawnProjectiles(world, behavior);
   }
 }
 
 function spawnProjectiles(world: WorldState, behavior: BehaviorModule): void {
-  const count = behavior.bulletCount;
-  const speed = behavior.bulletSpeed;
+  if (behavior.attack === 'none' || behavior.bulletCount <= 0) return;
+  const count = Math.max(0, Math.round(behavior.bulletCount * world.difficulty));
+  if (count <= 0) return;
+  const speed = behavior.bulletSpeed * world.difficulty;
+  const damage = 10 * world.difficulty;
   const aimedAngle = Math.atan2(world.player.y - world.boss.y, world.player.x - world.boss.x);
   for (let i = 0; i < count; i += 1) {
     const angle =
@@ -236,14 +242,16 @@ function spawnProjectiles(world: WorldState, behavior: BehaviorModule): void {
         ? aimedAngle + (i - (count - 1) / 2) * 0.12
         : behavior.attack === 'screen-ring'
           ? (Math.PI * 2 * i) / count + Math.sin(world.boss.lastBeatSpawnAt) * 0.2
+          : behavior.attack === 'lane-burst'
+            ? (i % 2 === 0 ? Math.PI / 2 : -Math.PI / 2)
           : (Math.PI * 2 * i) / count;
     world.projectiles.push({
-      x: world.boss.x,
+      x: behavior.attack === 'lane-burst' ? world.boss.x + (i - (count - 1) / 2) * 18 : world.boss.x,
       y: world.boss.y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       radius: 6,
-      damage: 10
+      damage
     });
   }
   world.events.push({ type: 'projectiles-fired' });
@@ -264,7 +272,7 @@ function updateProjectiles(world: WorldState, dt: number): void {
 }
 
 function resolveCombat(world: WorldState, input: CombatInput): void {
-  if (world.player.attackTime > 0 && distance(world.player, world.boss) <= 85) {
+  if (world.player.attackTime > 0 && distance(world.player, world.boss) <= 85 && isFacing(world.player, world.boss)) {
     const judgment = world.rhythm.judge(input.time, 'attack');
     const damage = 25 * judgment.damageMultiplier * world.player.nextAttackMultiplier;
     world.player.nextAttackMultiplier = 1;
@@ -301,6 +309,19 @@ function resolveOutcome(world: WorldState): void {
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function canFireOnBeat(world: WorldState, behavior: BehaviorModule, time: number): boolean {
+  if (time - world.boss.lastBeatSpawnAt <= 0.2) return false;
+  const fireWindowBeats = behavior.fireWindowBeats ?? 1;
+  const beatInterval = world.rhythm.timeToNextBeat(time + 0.001) + 0.001;
+  return time - world.boss.lastBeatSpawnAt >= beatInterval * fireWindowBeats - 0.01;
+}
+
+function isFacing(player: PlayerState, target: Actor): boolean {
+  const targetAngle = Math.atan2(target.y - player.y, target.x - player.x);
+  const diff = Math.atan2(Math.sin(targetAngle - player.facing), Math.cos(targetAngle - player.facing));
+  return Math.abs(diff) <= 0.65;
 }
 
 function clamp(value: number, min: number, max: number): number {

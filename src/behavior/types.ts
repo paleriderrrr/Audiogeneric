@@ -1,4 +1,4 @@
-import type { MusicSegment } from '../audio/types.js';
+import type { MusicSegment, MusicStyle, SegmentFeature, SegmentAttackHint, TrackStyleProfile } from '../audio/types.js';
 
 export type SegmentLabel = MusicSegment['label'];
 export type CombatIntent = 'warmup' | 'pressure' | 'chase' | 'lockdown' | 'burst' | 'release';
@@ -11,6 +11,8 @@ export interface BehaviorGenerationInput {
   beatGrid: number[];
   downbeat: number;
   segments: MusicSegment[];
+  styleProfile?: TrackStyleProfile;
+  segmentFeatures?: SegmentFeature[];
   confidence: {
     overall: number;
     segmentation: number;
@@ -43,5 +45,48 @@ export interface BehaviorTimeline {
     modelName?: string;
     fallbackUsed: boolean;
     validationWarnings: string[];
+    styleApplied?: MusicStyle;
+    strategyNotes?: string[];
+    segmentRationale?: Record<string, string>;
+  };
+}
+
+export interface BehaviorPromptSegment {
+  start: number;
+  end: number;
+  label: SegmentLabel;
+  energy: number;
+  beatDensity: number;
+  lowFreqWeight: number;
+  highFreqWeight: number;
+  stability: number;
+  intensityRole: SegmentFeature['intensityRole'];
+  recommendedAttack: SegmentAttackHint;
+}
+
+export interface BehaviorPromptInput {
+  trackSummary: {
+    bpm: number;
+    downbeat: number;
+    duration: number;
+    primaryStyle: MusicStyle;
+    styleConfidence: number;
+    energyMean: number;
+    lowFreqWeight: number;
+    highFreqWeight: number;
+    dynamicRange: number;
+    beatDensity: number;
+    segmentContrast: number;
+    descriptors: string[];
+    confidence: BehaviorGenerationInput['confidence'];
+  };
+  segments: BehaviorPromptSegment[];
+  availableMoves: MovementMode[];
+  availableAttacks: AttackMode[];
+  designRules: string[];
+  outputContract: {
+    format: 'json';
+    requiredTopLevelFields: string[];
+    requiredModuleFields: string[];
   };
 }

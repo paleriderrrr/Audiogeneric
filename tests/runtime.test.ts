@@ -31,6 +31,8 @@ class FakeAnalyserNode {
 
 class FakeAudioContext {
   currentTime = 0;
+  state: AudioContextState = 'running';
+  resumeCalls = 0;
   readonly analyser = new FakeAnalyserNode();
   readonly source = new FakeAudioBufferSourceNode();
 
@@ -43,6 +45,12 @@ class FakeAudioContext {
   }
 
   close(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  resume(): Promise<void> {
+    this.resumeCalls += 1;
+    this.state = 'running';
     return Promise.resolve();
   }
 }
@@ -95,6 +103,27 @@ function createAnalysis(duration = 12): AudioAnalysis {
     tempoCandidates: [{ bpm: 120, score: 1, source: 'autocorrelation' }],
     warmupWindow: { start: 0, end: Math.min(duration, 8), reason: 'high-clarity-beat' },
     calibration: null
+  };
+}
+
+function createElectronicAnalysis(duration = 12): AudioAnalysis {
+  return {
+    ...createAnalysis(duration),
+    styleProfile: {
+      primaryStyle: 'electronic',
+      confidence: 0.9,
+      energyMean: 0.75,
+      lowFreqWeight: 0.3,
+      highFreqWeight: 0.85,
+      dynamicRange: 0.2,
+      beatDensity: 0.92,
+      segmentContrast: 0.35,
+      descriptors: ['short-fast-pulses']
+    },
+    segmentFeatures: [
+      { start: 0, end: duration / 2, label: 'verse', energy: 0.4, beatDensity: 0.7, lowFreqWeight: 0.3, highFreqWeight: 0.8, stability: 0.8, intensityRole: 'groove', recommendedAttack: 'aimed-burst' },
+      { start: duration / 2, end: duration, label: 'chorus', energy: 0.8, beatDensity: 0.95, lowFreqWeight: 0.3, highFreqWeight: 0.9, stability: 0.75, intensityRole: 'peak', recommendedAttack: 'lane-burst' }
+    ]
   };
 }
 
@@ -181,6 +210,87 @@ test('rebuilds arena bounds when resizing during an active run', async () => {
 
     const worldAfterResize = (runtime as unknown as { world: { arena: { maxX: number } } }).world;
     assert.notEqual(worldAfterResize.arena.maxX, maxXBefore);
+  } finally {
+    globalThis.AudioContext = originalAudioContext;
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    globalThis.performance = originalPerformance;
+    if (originalDevicePixelRatio !== undefined && globalThis.window) {
+      globalThis.window.devicePixelRatio = originalDevicePixelRatio;
+    }
+  }
+});
+
+test('resumes suspended audio contexts before starting playback', async () => {
+  const originalAudioContext = globalThis.AudioContext;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  const originalDevicePixelRatio = globalThis.window?.devicePixelRatio;
+  const originalPerformance = globalThis.performance;
+  const contexts: FakeAudioContext[] = [];
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+  globalThis.performance = { now: () => 0 } as Performance;
+  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+  globalThis.AudioContext = class {
+    constructor() {
+      const context = new FakeAudioContext();
+      context.state = 'suspended';
+      contexts.push(context);
+      return context;
+    }
+  } as unknown as typeof AudioContext;
+
+  try {
+    const runtime = new GameRuntime(createCanvas(rect), {
+      onStatus() {},
+      onResult() {}
+    });
+
+    await runtime.start(createAnalysis(12), 1);
+
+    assert.equal(contexts[0].resumeCalls, 1);
+  } finally {
+    globalThis.AudioContext = originalAudioContext;
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    globalThis.performance = originalPerformance;
+    if (originalDevicePixelRatio !== undefined && globalThis.window) {
+      globalThis.window.devicePixelRatio = originalDevicePixelRatio;
+    }
+  }
+});
+
+test('forwards analyzed style features into the generated behavior plan', async () => {
+  const originalAudioContext = globalThis.AudioContext;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  const originalDevicePixelRatio = globalThis.window?.devicePixelRatio;
+  const originalPerformance = globalThis.performance;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+  globalThis.performance = { now: () => 0 } as Performance;
+  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+  globalThis.AudioContext = class {
+    constructor() {
+      return new FakeAudioContext();
+    }
+  } as unknown as typeof AudioContext;
+
+  try {
+    const runtime = new GameRuntime(createCanvas(rect), {
+      onStatus() {},
+      onResult() {}
+    });
+
+    await runtime.start(createElectronicAnalysis(12), 1);
+
+    const world = (runtime as unknown as { world: { behaviorPlan: Array<{ segmentLabel: string; attack: string }> } }).world;
+    assert.equal(world.behaviorPlan.find((module) => module.segmentLabel === 'chorus')?.attack, 'lane-burst');
   } finally {
     globalThis.AudioContext = originalAudioContext;
     globalThis.requestAnimationFrame = originalRequestAnimationFrame;

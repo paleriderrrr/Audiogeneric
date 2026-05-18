@@ -52,13 +52,20 @@ export function createBehaviorPlan(
   const timeline = createRuleBehaviorTimeline(input);
   return timeline.modules.map((module) => ({
     ...module,
-    label: module.segmentLabel
+    label: module.segmentLabel,
+    bulletCount: Math.max(0, Math.round(module.bulletCount * difficulty)),
+    bulletSpeed: module.bulletSpeed * (0.85 + difficulty * 0.15),
+    warningIntensity: Math.min(1, module.warningIntensity * (0.8 + difficulty * 0.2))
   }));
 }
 
 export function getBehaviorAtTime(plan: BehaviorModule[], time: number): BehaviorModule {
   const active = plan.find((module) => time >= module.start && time < module.end);
-  return active ?? plan[plan.length - 1] ?? {
+  if (active) return active;
+  const first = plan[0];
+  if (first && time < first.start) return first;
+  const previous = [...plan].reverse().find((module) => module.start <= time);
+  return previous ?? first ?? {
     start: 0,
     end: Infinity,
     label: 'verse',

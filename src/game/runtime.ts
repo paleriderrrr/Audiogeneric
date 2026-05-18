@@ -42,6 +42,9 @@ export class GameRuntime {
   async start(analysis: AudioAnalysis, difficulty: number): Promise<void> {
     this.stop();
     this.resize();
+    this.pendingAttack = false;
+    this.pendingBlock = false;
+    this.pendingDash = false;
     const runToken = ++this.runToken;
     const bpm = analysis.calibration?.selectedBpm ?? analysis.bpm;
     const firstBeat = analysis.calibration?.selectedDownbeat ?? analysis.firstBeat;
@@ -55,6 +58,8 @@ export class GameRuntime {
       downbeat: firstBeat,
       beatGrid: analysis.beats.map((beat) => beat.time),
       segments: analysis.segments,
+      styleProfile: analysis.styleProfile,
+      segmentFeatures: analysis.segmentFeatures,
       confidence: {
         overall: 0.85,
         segmentation: 0.8,
@@ -81,6 +86,9 @@ export class GameRuntime {
     this.source.buffer = analysis.buffer;
     this.source.connect(this.analyser);
     this.analyser.connect(this.audioContext.destination);
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
     this.startTime = this.audioContext.currentTime;
     const activeSource = this.source;
     activeSource.start();
@@ -115,6 +123,9 @@ export class GameRuntime {
     this.analyser = null;
     this.frequencyData = null;
     this.lowFrequencyEnergy = 0;
+    this.pendingAttack = false;
+    this.pendingBlock = false;
+    this.pendingDash = false;
     void this.audioContext?.close();
     this.audioContext = null;
   }
@@ -139,6 +150,14 @@ export class GameRuntime {
     window.addEventListener('keyup', (event) => {
       this.keys.delete(event.key.toLowerCase());
     });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+    });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') this.keys.clear();
+      });
+    }
     this.canvas.addEventListener('mousemove', (event) => {
       const rect = this.canvas.getBoundingClientRect();
       const scaleX = this.canvas.width / rect.width;

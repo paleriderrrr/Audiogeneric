@@ -10,6 +10,31 @@ export interface MusicSegment {
   energy: number;
 }
 
+export type MusicStyle = 'rock' | 'electronic' | 'hiphop' | 'ambient' | 'pop' | 'orchestral' | 'unknown';
+export type SegmentIntensityRole = 'setup' | 'groove' | 'peak' | 'climax' | 'release';
+export type SegmentAttackHint = 'none' | 'sparse-ring' | 'aimed-burst' | 'screen-ring' | 'lane-burst';
+
+export interface TrackStyleProfile {
+  primaryStyle: MusicStyle;
+  confidence: number;
+  energyMean: number;
+  lowFreqWeight: number;
+  highFreqWeight: number;
+  dynamicRange: number;
+  beatDensity: number;
+  segmentContrast: number;
+  descriptors: string[];
+}
+
+export interface SegmentFeature extends MusicSegment {
+  beatDensity: number;
+  lowFreqWeight: number;
+  highFreqWeight: number;
+  stability: number;
+  intensityRole: SegmentIntensityRole;
+  recommendedAttack: SegmentAttackHint;
+}
+
 export interface TempoCandidate {
   bpm: number;
   score: number;
@@ -39,6 +64,8 @@ export interface AudioAnalysis {
   duration: number;
   beats: BeatPoint[];
   segments: MusicSegment[];
+  styleProfile?: TrackStyleProfile;
+  segmentFeatures?: SegmentFeature[];
   tempoCandidates: TempoCandidate[];
   warmupWindow: WarmupWindow;
   calibration: CalibrationResult | null;
