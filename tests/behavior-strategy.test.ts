@@ -42,6 +42,24 @@ test('expands long high-energy segments into staged modules', async () => {
   assert.equal(dropModules[1].start >= dropModules[0].end, true);
 });
 
+test('snaps rule module phase boundaries to the detected beat grid', async () => {
+  const beatGrid = Array.from({ length: 80 }, (_, index) => Number((0.18 + index * 0.5).toFixed(2)));
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 120,
+    beatGrid,
+    segments: [
+      { start: 0, end: 19.3, label: 'chorus', energy: 0.88 }
+    ]
+  }, { strategy: 'rules' });
+
+  const internalStarts = timeline.modules.slice(1).map((module) => module.start);
+
+  assert.equal(internalStarts.length > 0, true);
+  assert.equal(internalStarts.every((start) => beatGrid.some((beat) => Math.abs(beat - start) < 0.00001)), true);
+});
+
+
 test('falls back explicitly to rules when llm generation fails validation', async () => {
   const provider: LlmBehaviorProvider = {
     async generate() {
@@ -303,6 +321,163 @@ test('selects advanced attack modes from different music analysis contexts', asy
   assert.equal(slowAttacks.has('melee-sweep'), true);
   assert.equal(fastAttacks.has('laser-ray'), true);
   assert.equal(fastAttacks.has('explosive-burst') || fastAttacks.has('charge-strike'), true);
+});
+
+test('uses FFT weights as the primary rule action signal', async () => {
+  const brightTimeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 132,
+    segments: [
+      { start: 0, end: 12, label: 'verse', energy: 0.58, lowFreqWeight: 0.1, highFreqWeight: 0.58, stability: 0.7 }
+    ]
+  }, { strategy: 'rules' });
+  const lowHeavyTimeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 132,
+    segments: [
+      { start: 0, end: 12, label: 'verse', energy: 0.58, lowFreqWeight: 0.6, highFreqWeight: 0.12, stability: 0.7 }
+    ]
+  }, { strategy: 'rules' });
+
+  assert.equal(new Set(brightTimeline.modules.map((module) => module.attack)).has('laser-ray'), true);
+  assert.equal(new Set(lowHeavyTimeline.modules.map((module) => module.attack)).has('charge-strike'), true);
+});
+
+test('uses spectral flux and intensity to drive transition-heavy rule actions', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 128,
+    segments: [
+      {
+        start: 0,
+        end: 12,
+        label: 'bridge',
+        energy: 0.54,
+        lowFreqWeight: 0.26,
+        highFreqWeight: 0.28,
+        stability: 0.76,
+        spectralCentroid: 0.44,
+        spectralFlux: 0.82,
+        beatDensity: 0.74,
+        intensity: 0.78
+      }
+    ]
+  }, { strategy: 'rules' });
+
+  assert.equal(new Set(timeline.modules.map((module) => module.attack)).has('explosive-burst'), true);
+  assert.equal(timeline.modules.some((module) => module.transitionIn === 'snap'), true);
+  assert.equal(timeline.modules.some((module) => module.pressureLevel >= 70), true);
+});
+
+test('rules prefer non-projectile attacks and pursuit spacing movement in active sections', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 136,
+    difficulty: 1.4,
+    segments: [
+      { start: 0, end: 16, label: 'verse', energy: 0.58, lowFreqWeight: 0.52, highFreqWeight: 0.18, stability: 0.68, intensity: 0.66 },
+      { start: 16, end: 34, label: 'bridge', energy: 0.68, lowFreqWeight: 0.28, highFreqWeight: 0.36, stability: 0.58, spectralFlux: 0.7, intensity: 0.74 },
+      { start: 34, end: 54, label: 'chorus', energy: 0.86, lowFreqWeight: 0.3, highFreqWeight: 0.54, stability: 0.46, intensity: 0.88 },
+      { start: 54, end: 78, label: 'drop', energy: 0.95, lowFreqWeight: 0.62, highFreqWeight: 0.32, stability: 0.4, intensity: 0.96 }
+    ]
+  }, { strategy: 'rules' });
+
+  const activeModules = timeline.modules.filter((module) => module.attack !== 'none');
+  const nonProjectileAttacks = new Set(['melee-sweep', 'laser-ray', 'explosive-burst', 'charge-strike']);
+  const projectileOnlyAttacks = new Set(['sparse-ring', 'aimed-burst', 'screen-ring', 'lane-burst']);
+  const nonProjectileCount = activeModules.filter((module) => nonProjectileAttacks.has(module.attack)).length;
+  const projectileOnlyCount = activeModules.filter((module) => projectileOnlyAttacks.has(module.attack)).length;
+  const spacingMovements = new Set(['chase', 'keep-distance', 'outer-orbit']);
+  const orbitCount = timeline.modules.filter((module) => module.movement === 'orbit').length;
+  const spacingMovementCount = timeline.modules.filter((module) => spacingMovements.has(module.movement)).length;
+
+  assert.equal(nonProjectileCount > projectileOnlyCount, true);
+  assert.equal(spacingMovementCount >= 3, true);
+  assert.equal(orbitCount <= 1, true);
+});
+
+test('combines weak adjacent FFT segments into flexible behavior sections', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 124,
+    segments: [
+      { start: 0, end: 5, label: 'verse', energy: 0.42, lowFreqWeight: 0.24, highFreqWeight: 0.28, stability: 0.78 },
+      { start: 5, end: 10, label: 'bridge', energy: 0.46, lowFreqWeight: 0.25, highFreqWeight: 0.3, stability: 0.76 },
+      { start: 10, end: 20, label: 'chorus', energy: 0.84, lowFreqWeight: 0.12, highFreqWeight: 0.62, stability: 0.52 }
+    ]
+  }, { strategy: 'rules' });
+
+  assert.equal(timeline.modules.some((module) => module.start < 5 && module.end > 5), true);
+  assert.equal(timeline.modules.some((module) => module.start < 10 && module.end > 10), false);
+});
+
+test('varies attack and movement groups inside an FFT-heavy section', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 146,
+    difficulty: 1.3,
+    segments: [
+      { start: 0, end: 28, label: 'drop', energy: 0.9, lowFreqWeight: 0.18, highFreqWeight: 0.7, stability: 0.46 }
+    ]
+  }, { strategy: 'rules' });
+
+  const nonProjectileAttacks = new Set(['melee-sweep', 'laser-ray', 'explosive-burst', 'charge-strike']);
+  assert.equal(timeline.modules.filter((module) => module.attack !== 'none').every((module) => nonProjectileAttacks.has(module.attack)), true);
+  assert.equal(new Set(timeline.modules.map((module) => module.attack)).size >= 2, true);
+  assert.equal(new Set(timeline.modules.map((module) => module.movement)).size >= 2, true);
+});
+
+test('splits valid llm modules on FFT segment boundaries and adapts actions to each segment', async () => {
+  const provider: LlmBehaviorProvider = {
+    async generate() {
+      return {
+        source: 'llm',
+        generatedAt: Date.now(),
+        metadata: {
+          fallbackUsed: false,
+          validationWarnings: [],
+          modelName: 'test-wide-module-model'
+        },
+        modules: [
+          {
+            id: 'llm-wide-0',
+            presetId: 'llm-wide',
+            start: 0,
+            end: 24,
+            segmentLabel: 'verse',
+            intent: 'pressure',
+            phaseRole: 'pressure',
+            movement: 'wander',
+            attack: 'sparse-ring',
+            bulletCount: 6,
+            bulletSpeed: 150,
+            fireWindowBeats: 4,
+            warningIntensity: 0.4,
+            pressureLevel: 40,
+            transitionIn: 'blend',
+            transitionOut: 'blend'
+          }
+        ]
+      };
+    }
+  };
+
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    segments: [
+      { start: 0, end: 8, label: 'verse', energy: 0.46, lowFreqWeight: 0.48, highFreqWeight: 0.1, stability: 0.7 },
+      { start: 8, end: 16, label: 'chorus', energy: 0.7, lowFreqWeight: 0.1, highFreqWeight: 0.62, stability: 0.68 },
+      { start: 16, end: 24, label: 'drop', energy: 0.88, lowFreqWeight: 0.64, highFreqWeight: 0.18, stability: 0.42 }
+    ]
+  }, { strategy: 'llm-preferred', llmProvider: provider });
+
+  assert.equal(timeline.source, 'llm');
+  assert.deepEqual(timeline.modules.map((module) => module.start), [0, 8, 16]);
+  assert.deepEqual(timeline.modules.map((module) => module.end), [8, 16, 24]);
+  assert.deepEqual(timeline.modules.map((module) => module.segmentLabel), ['verse', 'chorus', 'drop']);
+  assert.equal(timeline.modules[0].attack, 'charge-strike');
+  assert.equal(['laser-ray', 'melee-sweep', 'charge-strike'].includes(timeline.modules[1].attack), true);
+  assert.equal(['explosive-burst', 'charge-strike', 'screen-ring'].includes(timeline.modules[2].attack), true);
 });
 
 test('accepts llm-generated advanced action modules without falling back to rules', async () => {

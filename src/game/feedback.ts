@@ -33,16 +33,6 @@ const FEEDBACK_PRIORITY: Array<{
     }
   },
   {
-    type: 'boss-self-hit',
-    feedback: {
-      text: '反噬命中',
-      tone: 'success',
-      playerFlash: 'none',
-      bossFlash: 'hit',
-      screenShake: 4
-    }
-  },
-  {
     type: 'perfect-defense',
     feedback: {
       text: '完美防御',
@@ -136,6 +126,16 @@ const FEEDBACK_PRIORITY: Array<{
     type: 'dash-blocked-by-cooldown',
     feedback: {
       text: '冲刺冷却中',
+      tone: 'warning',
+      playerFlash: 'none',
+      bossFlash: 'none',
+      screenShake: 0
+    }
+  },
+  {
+    type: 'attack-blocked-by-cooldown',
+    feedback: {
+      text: '攻击冷却中',
       tone: 'warning',
       playerFlash: 'none',
       bossFlash: 'none',

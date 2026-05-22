@@ -5,6 +5,8 @@ export interface EnergyFrame {
   energy: number;
   low: number;
   high: number;
+  spectralCentroid?: number;
+  spectralFlux?: number;
 }
 
 export interface SegmentEnergySummary extends MusicSegment {
@@ -13,6 +15,9 @@ export interface SegmentEnergySummary extends MusicSegment {
   lowFreqWeight: number;
   highFreqWeight: number;
   stability: number;
+  spectralCentroid: number;
+  spectralFlux: number;
+  intensity: number;
 }
 
 export { calibrateWarmupTaps } from './calibration.js';
@@ -45,32 +50,52 @@ export function buildTempoCandidates(beatTimes: number[]): TempoCandidate[] {
     .slice(0, 4);
 }
 
-export function summarizeSegmentEnergies(frames: EnergyFrame[], duration: number): SegmentEnergySummary[] {
+export function summarizeSegmentEnergies(
+  frames: EnergyFrame[],
+  duration: number,
+  beatTimes: number[] = []
+): SegmentEnergySummary[] {
   if (frames.length === 0 || duration <= 0) {
     return [];
   }
 
-  const targetSegmentCount = Math.max(3, Math.min(8, Math.round(duration / 18)));
-  const minimumSegmentDuration = clamp(duration / (targetSegmentCount + 1), 3.5, 12);
-  const boundaries = resolveSegmentBoundaries(frames, duration, targetSegmentCount, minimumSegmentDuration);
+  const targetSegmentCount = Math.max(4, Math.min(10, Math.round(duration / 14)));
+  const minimumSegmentDuration = clamp(duration / (targetSegmentCount + 1), 4, 10);
+  const boundaries = resolveSegmentBoundaries(frames, duration, targetSegmentCount, minimumSegmentDuration, beatTimes);
+  const metrics = buildFrameMetrics(frames);
+  const normalizedBeatTimes = normalizeTimeGrid(beatTimes, duration);
   const summaries = boundaries.slice(0, -1).map((start, index) => {
     const end = boundaries[index + 1];
     const range = resolveFrameRange(frames, start, end);
-    const slice = frames.slice(range.start, range.end);
-    const energy = average(slice.map((frame) => frame.energy));
-    const lowFreqWeight = average(slice.map((frame) => frame.low));
-    const highFreqWeight = average(slice.map((frame) => frame.high));
-    const stability = 1 - normalizedStd(slice.map((frame) => frame.energy));
+    const energy = averageFromPrefix(metrics.energy, range);
+    const lowFreqWeight = averageFromPrefix(metrics.low, range);
+    const highFreqWeight = averageFromPrefix(metrics.high, range);
+    const spectralCentroid = averageFromPrefix(metrics.spectralCentroid, range);
+    const spectralFlux = averageFromPrefix(metrics.spectralFlux, range);
+    const stability = 1 - normalizedStdFromPrefixes(metrics.energy, metrics.energySquared, range);
+    const beatDensity = resolveBeatDensity(normalizedBeatTimes, start, end, energy, stability);
+    const intensity = clamp(
+      energy * 0.42
+      + beatDensity * 0.18
+      + lowFreqWeight * 0.13
+      + highFreqWeight * 0.12
+      + spectralFlux * 0.15,
+      0,
+      1
+    );
     return {
       start,
       end,
       label: 'verse' as MusicSegment['label'],
       energy,
       duration: end - start,
-      beatDensity: clamp(energy * 0.7 + stability * 0.3, 0.2, 0.95),
+      beatDensity,
       lowFreqWeight,
       highFreqWeight,
-      stability
+      stability,
+      spectralCentroid,
+      spectralFlux,
+      intensity
     };
   });
 
@@ -135,25 +160,74 @@ function average(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function buildFrameMetrics(frames: EnergyFrame[]): {
+  energy: number[];
+  energySquared: number[];
+  low: number[];
+  high: number[];
+  spectralCentroid: number[];
+  spectralFlux: number[];
+} {
+  const energy = buildPrefixSums(frames.map((frame) => frame.energy));
+  return {
+    energy,
+    energySquared: buildPrefixSums(frames.map((frame) => frame.energy * frame.energy)),
+    low: buildPrefixSums(frames.map((frame) => frame.low)),
+    high: buildPrefixSums(frames.map((frame) => frame.high)),
+    spectralCentroid: buildPrefixSums(frames.map((frame) => frame.spectralCentroid ?? estimateSpectralCentroid(frame))),
+    spectralFlux: buildPrefixSums(frames.map((frame) => frame.spectralFlux ?? 0))
+  };
+}
+
+function averageFromPrefix(
+  prefix: number[],
+  range: { start: number; end: number; count: number }
+): number {
+  return range.count === 0 ? 0 : (prefix[range.end] - prefix[range.start]) / range.count;
+}
+
+function estimateSpectralCentroid(frame: EnergyFrame): number {
+  const total = Math.max(0.0001, frame.low + frame.high);
+  return clamp((frame.high * 0.72 + frame.low * 0.18) / total, 0, 1);
+}
+
+function resolveBeatDensity(
+  beatTimes: number[],
+  start: number,
+  end: number,
+  energy: number,
+  stability: number
+): number {
+  const duration = Math.max(0.001, end - start);
+  if (beatTimes.length === 0) {
+    return clamp(energy * 0.7 + stability * 0.3, 0.2, 0.95);
+  }
+  const beatsInRange = lowerBoundNumber(beatTimes, end) - lowerBoundNumber(beatTimes, start);
+  const densityPerSecond = beatsInRange / duration;
+  return clamp(densityPerSecond / 4, 0.08, 1);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
 function resolveSegmentBoundaries(
   frames: EnergyFrame[],
   duration: number,
   targetSegmentCount: number,
-  minimumSegmentDuration: number
+  minimumSegmentDuration: number,
+  beatTimes: number[]
 ): number[] {
-  const novelty = frames.map((frame, index) => {
-    if (index === 0) return 0;
-    const previous = frames[index - 1];
-    return (
-      Math.abs(frame.energy - previous.energy) * 0.6 +
-      Math.abs(frame.low - previous.low) * 0.25 +
-      Math.abs(frame.high - previous.high) * 0.15
-    );
-  });
+  const novelty = buildStructuralNovelty(frames);
   const noveltyMean = average(novelty);
-  const noveltyThreshold = noveltyMean + normalizedStd(novelty) * 0.35;
+  const noveltyThreshold = noveltyMean + normalizedStd(novelty) * 0.2;
   const candidateCount = Math.max(0, targetSegmentCount - 1);
   const selected: number[] = [];
+  const normalizedBeatTimes = normalizeTimeGrid(beatTimes, duration);
+  const detectedBeatTimes = normalizedBeatTimes.length > 0 ? normalizedBeatTimes : inferStrongBeatTimes(frames);
 
   const rankedPeaks = novelty
     .map((value, index) => ({ value, index, time: frames[index].time }))
@@ -168,27 +242,212 @@ function resolveSegmentBoundaries(
 
   for (const candidate of rankedPeaks) {
     if (selected.length >= candidateCount) break;
-    if (selected.every((time) => Math.abs(time - candidate.time) >= minimumSegmentDuration)) {
-      selected.push(candidate.time);
+    const snappedTime = snapToNearestTime(candidate.time, detectedBeatTimes, 0.35);
+    if (selected.every((time) => Math.abs(time - snappedTime) >= minimumSegmentDuration)) {
+      selected.push(snappedTime);
     }
   }
 
   if (selected.length < candidateCount) {
-    const remaining = candidateCount - selected.length;
-    const fallbackStep = duration / (remaining + 1);
-    for (let index = 1; index <= remaining; index += 1) {
-      const candidateTime = fallbackStep * index;
-      if (
-        candidateTime >= minimumSegmentDuration &&
-        duration - candidateTime >= minimumSegmentDuration &&
-        selected.every((time) => Math.abs(time - candidateTime) >= minimumSegmentDuration * 0.72)
-      ) {
-        selected.push(candidateTime);
+    const relaxedMinimumDuration = Math.min(
+      minimumSegmentDuration,
+      Math.max(2, duration / (targetSegmentCount + 1))
+    );
+    const phraseCandidates = buildPhraseBoundaryCandidates(detectedBeatTimes, duration, relaxedMinimumDuration);
+    const idealSlots = Array.from(
+      { length: candidateCount },
+      (_, index) => (duration / (candidateCount + 1)) * (index + 1)
+    );
+    for (const idealTime of idealSlots) {
+      if (selected.length >= candidateCount) break;
+      const candidateTime = pickFallbackBoundary(idealTime, phraseCandidates, selected, relaxedMinimumDuration)
+        ?? snapToNearestTime(idealTime, detectedBeatTimes, 0.45);
+      appendCandidateBoundary(selected, candidateTime, duration, relaxedMinimumDuration);
+    }
+
+    if (selected.length < candidateCount && relaxedMinimumDuration > 4) {
+      const fillMinimumDuration = Math.max(4, relaxedMinimumDuration * 0.65);
+      const densePhraseCandidates = buildPhraseBoundaryCandidates(detectedBeatTimes, duration, fillMinimumDuration);
+      for (const idealTime of idealSlots) {
+        if (selected.length >= candidateCount) break;
+        const candidateTime = pickFallbackBoundary(idealTime, densePhraseCandidates, selected, fillMinimumDuration)
+          ?? snapToNearestTime(idealTime, detectedBeatTimes, 0.45);
+        appendCandidateBoundary(selected, candidateTime, duration, fillMinimumDuration);
       }
     }
   }
 
   return [0, ...selected.sort((left, right) => left - right), duration];
+}
+
+function appendCandidateBoundary(
+  selected: number[],
+  candidateTime: number,
+  duration: number,
+  minimumSegmentDuration: number
+): boolean {
+  if (
+    candidateTime >= minimumSegmentDuration &&
+    duration - candidateTime >= minimumSegmentDuration &&
+    selected.every((time) => Math.abs(time - candidateTime) >= minimumSegmentDuration)
+  ) {
+    selected.push(candidateTime);
+    return true;
+  }
+  return false;
+}
+
+function normalizeTimeGrid(times: number[], duration: number): number[] {
+  return [...new Set(times
+    .filter((time) => Number.isFinite(time) && time >= 0 && time <= duration)
+    .map((time) => Math.round(time * 1000) / 1000))]
+    .sort((left, right) => left - right);
+}
+
+function buildPhraseBoundaryCandidates(
+  beatTimes: number[],
+  duration: number,
+  minimumSegmentDuration: number
+): number[] {
+  if (beatTimes.length < 8) return [];
+  const intervals = beatTimes
+    .slice(1)
+    .map((time, index) => time - beatTimes[index])
+    .filter((interval) => Number.isFinite(interval) && interval > 0);
+  const medianInterval = median(intervals);
+  const phraseBeats = medianInterval * 32 <= minimumSegmentDuration * 1.8 ? 32 : 16;
+  const candidates = new Set<number>();
+
+  for (let index = phraseBeats; index < beatTimes.length; index += phraseBeats) {
+    const time = beatTimes[index];
+    if (time >= minimumSegmentDuration && duration - time >= minimumSegmentDuration) {
+      candidates.add(Math.round(time * 1000) / 1000);
+    }
+  }
+
+  const halfPhrase = Math.max(8, phraseBeats / 2);
+  for (let index = halfPhrase; index < beatTimes.length; index += phraseBeats) {
+    const time = beatTimes[index];
+    if (time >= minimumSegmentDuration && duration - time >= minimumSegmentDuration) {
+      candidates.add(Math.round(time * 1000) / 1000);
+    }
+  }
+
+  return [...candidates].sort((left, right) => left - right);
+}
+
+function pickFallbackBoundary(
+  idealTime: number,
+  candidates: number[],
+  selected: number[],
+  minimumSegmentDuration: number
+): number | null {
+  let best: number | null = null;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    if (!selected.every((time) => Math.abs(time - candidate) >= minimumSegmentDuration)) continue;
+    const distance = Math.abs(candidate - idealTime);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function buildStructuralNovelty(frames: EnergyFrame[]): number[] {
+  const frameStep = resolveFrameStep(frames);
+  const shortWindow = Math.max(1, Math.round(0.25 / frameStep));
+  const longWindow = Math.max(shortWindow + 1, Math.round(1.2 / frameStep));
+  const energy = smoothSeries(frames.map((frame) => frame.energy), shortWindow);
+  const low = smoothSeries(frames.map((frame) => frame.low), shortWindow);
+  const high = smoothSeries(frames.map((frame) => frame.high), shortWindow);
+  const series = {
+    energy: buildPrefixSums(energy),
+    low: buildPrefixSums(low),
+    high: buildPrefixSums(high)
+  };
+
+  return frames.map((_, index) => {
+    const before = resolveWindowStats(series, Math.max(0, index - longWindow), index);
+    const after = resolveWindowStats(series, index, Math.min(frames.length, index + longWindow));
+    const energyShift = Math.abs(after.energy - before.energy);
+    const lowShift = Math.abs(after.low - before.low);
+    const highShift = Math.abs(after.high - before.high);
+    const spectralShift = Math.abs((after.high - after.low) - (before.high - before.low));
+    const localImpact = Math.abs(energy[index] - (energy[index - 1] ?? energy[index]));
+    return energyShift * 0.42 + lowShift * 0.22 + highShift * 0.18 + spectralShift * 0.13 + localImpact * 0.05;
+  });
+}
+
+function resolveWindowStats(
+  series: { energy: number[]; low: number[]; high: number[] },
+  start: number,
+  end: number
+): { energy: number; low: number; high: number } {
+  return {
+    energy: averageFromBounds(series.energy, start, end),
+    low: averageFromBounds(series.low, start, end),
+    high: averageFromBounds(series.high, start, end)
+  };
+}
+
+function smoothSeries(values: number[], radius: number): number[] {
+  const prefix = buildPrefixSums(values);
+  return values.map((_, index) => {
+    const start = Math.max(0, index - radius);
+    const end = Math.min(values.length, index + radius + 1);
+    return averageFromBounds(prefix, start, end);
+  });
+}
+
+function inferStrongBeatTimes(frames: EnergyFrame[]): number[] {
+  if (frames.length < 3) return [];
+  const frameStep = resolveFrameStep(frames);
+  const minimumGap = 0.3;
+  const lookBack = Math.max(4, Math.round(0.6 / frameStep));
+  const energyPrefix = buildPrefixSums(frames.map((frame) => frame.energy));
+  const beats: number[] = [];
+  let lastBeat = -Infinity;
+
+  for (let index = lookBack; index < frames.length - 1; index += 1) {
+    const frame = frames[index];
+    const previous = frames[index - 1];
+    const next = frames[index + 1];
+    const localEnergy = averageFromBounds(energyPrefix, index - lookBack, index);
+    if (
+      frame.energy > previous.energy &&
+      frame.energy >= next.energy &&
+      frame.energy >= Math.max(0.14, localEnergy * 1.22) &&
+      frame.time - lastBeat >= minimumGap
+    ) {
+      beats.push(frame.time);
+      lastBeat = frame.time;
+    }
+  }
+
+  return beats;
+}
+
+function snapToNearestTime(time: number, candidates: number[], tolerance: number): number {
+  const index = lowerBoundNumber(candidates, time);
+  const next = candidates[index];
+  const previous = candidates[index - 1];
+  let best = time;
+  let bestDistance = tolerance;
+  for (const candidate of [previous, next]) {
+    if (candidate === undefined) continue;
+    const distance = Math.abs(candidate - time);
+    if (distance <= bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return Math.round(best * 1000) / 1000;
+}
+
+function resolveFrameStep(frames: EnergyFrame[]): number {
+  return frames.length > 1 ? Math.max(0.001, frames[1].time - frames[0].time) : 0.25;
 }
 
 function assignSegmentLabels(summaries: SegmentEnergySummary[]): SegmentEnergySummary[] {
@@ -243,6 +502,11 @@ function buildPrefixSums(values: number[]): number[] {
   return prefix;
 }
 
+function averageFromBounds(prefix: number[], start: number, end: number): number {
+  const count = Math.max(0, end - start);
+  return count === 0 ? 0 : (prefix[end] - prefix[start]) / count;
+}
+
 function resolveFrameRange(frames: EnergyFrame[], start: number, end: number): { start: number; end: number; count: number } {
   const startIndex = lowerBound(frames, start);
   const endIndex = lowerBound(frames, end);
@@ -267,10 +531,36 @@ function lowerBound(frames: EnergyFrame[], target: number): number {
   return low;
 }
 
+function lowerBoundNumber(values: number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (values[mid] < target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
+}
+
 function normalizedStd(values: number[]): number {
   if (values.length === 0) return 1;
   const avg = average(values);
   const variance = values.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / values.length;
+  return Math.min(1, Math.sqrt(variance) / Math.max(0.0001, avg || 1));
+}
+
+function normalizedStdFromPrefixes(
+  valuePrefix: number[],
+  squaredPrefix: number[],
+  range: { start: number; end: number; count: number }
+): number {
+  if (range.count === 0) return 1;
+  const avg = averageFromPrefix(valuePrefix, range);
+  const squaredAverage = averageFromPrefix(squaredPrefix, range);
+  const variance = Math.max(0, squaredAverage - avg * avg);
   return Math.min(1, Math.sqrt(variance) / Math.max(0.0001, avg || 1));
 }
 

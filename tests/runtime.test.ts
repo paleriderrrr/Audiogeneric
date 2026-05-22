@@ -236,3 +236,80 @@ test('rebuilds arena bounds when resizing during an active run', async () => {
     }
   }
 });
+
+test('reports MiMo request and result status while starting llm mode', async () => {
+  const originalAudioContext = globalThis.AudioContext;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  const originalDevicePixelRatio = globalThis.window?.devicePixelRatio;
+  const originalPerformance = globalThis.performance;
+  const statuses: string[] = [];
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+  globalThis.performance = { now: () => 0 } as Performance;
+  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+  globalThis.AudioContext = class {
+    constructor() {
+      return new FakeAudioContext();
+    }
+  } as unknown as typeof AudioContext;
+
+  try {
+    const runtime = new GameRuntime(createCanvas(rect), {
+      onStatus(message) {
+        statuses.push(message);
+      },
+      onResult() {}
+    });
+
+    await runtime.start(createAnalysis(12), 1, {
+      behaviorMode: 'llm-preferred',
+      llmProvider: {
+        async generate() {
+          return {
+            source: 'llm',
+            generatedAt: Date.now(),
+            metadata: {
+              fallbackUsed: false,
+              validationWarnings: [],
+              modelName: 'status-test-model'
+            },
+            modules: [
+              {
+                id: 'status-llm-0',
+                presetId: 'status-llm',
+                start: 0,
+                end: 12,
+                segmentLabel: 'verse',
+                intent: 'pressure',
+                phaseRole: 'pressure',
+                movement: 'wander',
+                attack: 'sparse-ring',
+                bulletCount: 4,
+                bulletSpeed: 150,
+                fireWindowBeats: 4,
+                warningIntensity: 0.4,
+                pressureLevel: 40,
+                transitionIn: 'blend',
+                transitionOut: 'blend'
+              }
+            ]
+          };
+        }
+      }
+    });
+
+    assert.equal(statuses.some((message) => message.includes('正在调用 MiMo')), true);
+    assert.equal(statuses.some((message) => message.includes('大模型') && message.includes('动作')), true);
+  } finally {
+    globalThis.AudioContext = originalAudioContext;
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    globalThis.performance = originalPerformance;
+    if (originalDevicePixelRatio !== undefined && globalThis.window) {
+      globalThis.window.devicePixelRatio = originalDevicePixelRatio;
+    }
+  }
+});

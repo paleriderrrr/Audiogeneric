@@ -16,6 +16,13 @@ export interface MusicSegment {
   end: number;
   label: 'intro' | 'verse' | 'chorus' | 'bridge' | 'drop' | 'outro';
   energy: number;
+  lowFreqWeight?: number;
+  highFreqWeight?: number;
+  stability?: number;
+  spectralCentroid?: number;
+  spectralFlux?: number;
+  beatDensity?: number;
+  intensity?: number;
 }
 
 export interface TempoCandidate {

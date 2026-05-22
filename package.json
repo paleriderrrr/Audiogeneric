@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build",
     "test": "tsc -p tsconfig.test.json && node --test dist-test/tests/*.test.js",
     "test:audio-file": "tsc -p tsconfig.test.json && node dist-test/tests/audio-file-cli.js"

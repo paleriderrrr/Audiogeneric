@@ -21,6 +21,8 @@ export interface Actor {
 export interface PlayerState extends Actor {
   speed: number;
   attackTime: number;
+  attackCooldown: number;
+  attackAim: number;
   attackJudgment: Judgment | null;
   blockTime: number;
   dashCooldown: number;
@@ -63,10 +65,10 @@ export interface WorldEvent {
     | 'boss-laser'
     | 'boss-sweep'
     | 'boss-charged'
-    | 'boss-self-hit'
     | 'near-graze'
     | 'player-attack'
     | 'player-attack-beat'
+    | 'attack-blocked-by-cooldown'
     | 'player-block'
     | 'player-block-beat'
     | 'player-dash'
@@ -111,6 +113,10 @@ const DODGE_DISTANCE = 96;
 const DODGE_CLEAR_RADIUS = 28;
 const SLASH_RADIUS = 92;
 const SLASH_HALF_ANGLE = Math.PI / 5;
+const LOCK_ATTACK_RADIUS = 118;
+const LOCK_ATTACK_HALF_ANGLE = Math.PI / 4;
+const ATTACK_ACTIVE_TIME = 0.18;
+const ATTACK_COOLDOWN = 0.42;
 
 export function createInitialWorld(config: {
   width: number;
@@ -139,6 +145,8 @@ export function createInitialWorld(config: {
       maxHp: 100,
       speed: 260,
       attackTime: 0,
+      attackCooldown: 0,
+      attackAim: -Math.PI / 2,
       attackJudgment: null,
       blockTime: 0,
       dashCooldown: 0,
@@ -179,7 +187,7 @@ export function stepWorld(world: WorldState, dt: number, input: CombatInput): vo
   world.events = [];
   const timerSnapshot = tickTimers(world.player, dt);
   updatePlayer(world, dt, input, timerSnapshot.dodgeTime);
-  updateBoss(world, input.time);
+  updateBoss(world, input.time, dt);
   updateProjectiles(world, dt);
   resolveCombat(world, input);
   resolveOutcome(world);
@@ -188,6 +196,7 @@ export function stepWorld(world: WorldState, dt: number, input: CombatInput): vo
 function tickTimers(player: PlayerState, dt: number): { dodgeTime: number } {
   const dodgeTime = player.dodgeTime;
   player.attackTime = Math.max(0, player.attackTime - dt);
+  player.attackCooldown = Math.max(0, player.attackCooldown - dt);
   if (player.attackTime <= 0) {
     player.attackJudgment = null;
   }
@@ -207,13 +216,19 @@ function updatePlayer(world: WorldState, dt: number, input: CombatInput, dodgeTi
   const dy = input.pointerY - player.y;
   if (dx !== 0 || dy !== 0) player.facing = Math.atan2(dy, dx);
 
-  if (input.attack && player.attackTime <= 0) {
-    const judgment = world.rhythm.judge(input.time, 'attack');
-    player.attackTime = 0.22;
-    player.attackJudgment = judgment;
-    world.events.push({ type: 'player-attack' });
-    if (judgment.rank !== 'miss') {
-      world.events.push({ type: 'player-attack-beat' });
+  if (input.attack) {
+    if (player.attackCooldown <= 0) {
+      const judgment = world.rhythm.judge(input.time, 'attack');
+      player.attackTime = ATTACK_ACTIVE_TIME;
+      player.attackCooldown = ATTACK_COOLDOWN;
+      player.attackAim = player.facing;
+      player.attackJudgment = judgment;
+      world.events.push({ type: 'player-attack' });
+      if (judgment.rank !== 'miss') {
+        world.events.push({ type: 'player-attack-beat' });
+      }
+    } else {
+      world.events.push({ type: 'attack-blocked-by-cooldown' });
     }
   }
 
@@ -278,8 +293,9 @@ function updatePlayer(world: WorldState, dt: number, input: CombatInput, dodgeTi
   player.y = clamp(player.y + (input.moveY / length) * speed * dt, world.arena.minY, world.arena.maxY);
 }
 
-function updateBoss(world: WorldState, time: number): void {
+function updateBoss(world: WorldState, time: number, dt: number): void {
   const boss = world.boss;
+  const player = world.player;
   const behavior = getBehaviorAtTime(world.behaviorPlan, time);
   world.activeBehavior = behavior;
 
@@ -297,6 +313,22 @@ function updateBoss(world: WorldState, time: number): void {
     const orbitRadiusY = 34 + behavior.warningIntensity * 18;
     boss.x = clamp(boss.homeX + Math.cos(time * 1.9) * orbitRadiusX, world.arena.minX, world.arena.maxX);
     boss.y = clamp(boss.homeY + Math.sin(time * 1.9) * orbitRadiusY, world.arena.minY, world.arena.maxY);
+  } else if (behavior.movement === 'chase') {
+    moveBossToward(world, player.x, player.y, 96 + behavior.warningIntensity * 80, dt);
+  } else if (behavior.movement === 'keep-distance') {
+    const desiredDistance = 128 + behavior.warningIntensity * 40;
+    const dx = boss.x - player.x;
+    const dy = boss.y - player.y;
+    const distance = Math.max(0.001, Math.hypot(dx, dy));
+    const targetX = player.x + (dx / distance) * desiredDistance;
+    const targetY = player.y + (dy / distance) * desiredDistance;
+    moveBossToward(world, targetX, targetY, 82 + behavior.warningIntensity * 54, dt);
+  } else if (behavior.movement === 'outer-orbit') {
+    const phase = time * (0.85 + behavior.warningIntensity * 0.5);
+    const radiusX = (world.arena.maxX - world.arena.minX) * 0.42;
+    const radiusY = (world.arena.maxY - world.arena.minY) * 0.39;
+    boss.x = clamp(boss.homeX + Math.cos(phase) * radiusX, world.arena.minX, world.arena.maxX);
+    boss.y = clamp(boss.homeY + Math.sin(phase) * radiusY, world.arena.minY, world.arena.maxY);
   } else {
     boss.x = clamp(boss.homeX + Math.sin(time * 34) * 10, world.arena.minX, world.arena.maxX);
     boss.y = clamp(boss.homeY + Math.cos(time * 31) * 10, world.arena.minY, world.arena.maxY);
@@ -483,7 +515,7 @@ function updateProjectiles(world: WorldState, dt: number): void {
 }
 
 function resolveCombat(world: WorldState, input: CombatInput): void {
-  if (world.player.attackTime > 0 && bossInsideSlashCone(world.player, world.boss)) {
+  if (world.player.attackTime > 0 && bossInsideAttackLock(world.player, world.boss)) {
     const judgment = world.player.attackJudgment ?? world.rhythm.judge(input.time, 'attack');
     const damage = 25 * judgment.damageMultiplier * world.player.nextAttackMultiplier;
     world.player.nextAttackMultiplier = 1;
@@ -513,30 +545,16 @@ function resolveCombat(world: WorldState, input: CombatInput): void {
       world.events.push({ type: 'near-graze' });
     }
   }
-
-  resolveBossSelfCollisions(world);
 }
 
-function resolveBossSelfCollisions(world: WorldState): void {
-  for (let index = world.projectiles.length - 1; index >= 0; index -= 1) {
-    const projectile = world.projectiles[index];
-    const bossCollisionDelay = projectile.bossCollisionDelay ?? Infinity;
-    if ((projectile.age ?? 0) < bossCollisionDelay) {
-      continue;
-    }
-
-    const hitDistance = projectile.radius + world.boss.radius * 0.72;
-    if (distance(projectile, world.boss) > hitDistance) {
-      continue;
-    }
-
-    world.projectiles.splice(index, 1);
-    const selfDamage = projectile.damage * (projectile.kind === 'explosion' ? 1.15 : 0.85);
-    world.boss.hp -= selfDamage;
-    world.damageDealt += selfDamage;
-    world.score += Math.round(selfDamage);
-    world.events.push({ type: 'boss-self-hit' });
-  }
+function moveBossToward(world: WorldState, targetX: number, targetY: number, speed: number, dt: number): void {
+  const dx = targetX - world.boss.x;
+  const dy = targetY - world.boss.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance <= 0.001) return;
+  const step = Math.min(distance, speed * dt);
+  world.boss.x = clamp(world.boss.x + (dx / distance) * step, world.arena.minX, world.arena.maxX);
+  world.boss.y = clamp(world.boss.y + (dy / distance) * step, world.arena.minY, world.arena.maxY);
 }
 
 function resolveOutcome(world: WorldState): void {
@@ -555,16 +573,21 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }): num
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function bossInsideSlashCone(player: PlayerState, boss: BossState): boolean {
+function bossInsideAttackLock(player: PlayerState, boss: BossState): boolean {
   const dx = boss.x - player.x;
   const dy = boss.y - player.y;
   const distanceToBoss = Math.hypot(dx, dy);
-  if (distanceToBoss > SLASH_RADIUS) {
+  const angleToBoss = Math.atan2(dy, dx);
+  const aim = player.attackTime > 0 ? player.attackAim : player.facing;
+  if (distanceToBoss <= SLASH_RADIUS) {
+    return Math.abs(normalizeAngle(angleToBoss - aim)) <= SLASH_HALF_ANGLE;
+  }
+
+  if (distanceToBoss > LOCK_ATTACK_RADIUS) {
     return false;
   }
 
-  const angleToBoss = Math.atan2(dy, dx);
-  return Math.abs(normalizeAngle(angleToBoss - player.facing)) <= SLASH_HALF_ANGLE;
+  return Math.abs(normalizeAngle(angleToBoss - aim)) <= LOCK_ATTACK_HALF_ANGLE;
 }
 
 function resolveDodgeDirection(player: PlayerState, input: CombatInput): { x: number; y: number } {

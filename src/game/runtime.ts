@@ -31,7 +31,7 @@ interface VisualSequence {
   size: number;
   rotation: number;
   color: string;
-  kind: 'impact' | 'guard' | 'graze' | 'dash' | 'burst' | 'self-hit' | 'charge';
+  kind: 'impact' | 'guard' | 'graze' | 'dash' | 'burst' | 'charge';
 }
 
 const CHARACTER_SEQUENCE_FRAMES = 20;
@@ -122,17 +122,22 @@ export class GameRuntime {
     const runToken = ++this.runToken;
     const bpm = analysis.calibration?.selectedBpm ?? analysis.bpm;
     const firstBeat = analysis.calibration?.selectedDownbeat ?? analysis.firstBeat;
+    const beatGrid = createBattleBeatGrid(analysis, bpm, firstBeat);
     const rhythm = createRhythmTracker({
       bpm,
       firstBeat,
-      duration: analysis.duration
+      duration: analysis.duration,
+      beatGrid
     });
     const behaviorMode = options.behaviorMode ?? 'rules';
+    this.callbacks.onStatus(behaviorMode === 'llm-preferred'
+      ? '正在调用 MiMo 大模型生成段落行为...'
+      : '正在使用 FFT 段落生成规则行为...');
     const behaviorTimeline = await createBehaviorTimeline({
       bpm,
       difficulty,
       downbeat: firstBeat,
-      beatGrid: analysis.beats.map((beat) => beat.time),
+      beatGrid,
       segments: analysis.segments,
       confidence: {
         overall: 0.85,
@@ -183,7 +188,12 @@ export class GameRuntime {
     const modeLabel = behaviorMode === 'llm-preferred'
       ? (behaviorTimeline.metadata.fallbackUsed ? '大模型优先（规则回退）' : '大模型')
       : '规则';
-    this.callbacks.onStatus(`BPM ${bpm} / ${analysis.segments.length} 段 / 威胁 ${difficulty.toFixed(1)}x / ${modeLabel}`);
+    const warningText = behaviorTimeline.metadata.validationWarnings.length > 0
+      ? ` / ${behaviorTimeline.metadata.validationWarnings[0]}`
+      : '';
+    this.callbacks.onStatus(
+      `BPM ${bpm} / ${analysis.segments.length} 段 / ${behaviorTimeline.modules.length} 动作 / 威胁 ${difficulty.toFixed(1)}x / ${modeLabel}${warningText}`
+    );
     this.animationId = requestAnimationFrame((time) => this.loop(time));
   }
 
@@ -1172,7 +1182,8 @@ export class GameRuntime {
     ctx.fillStyle = `rgba(214, 180, 95, ${fillAlpha})`;
     ctx.beginPath();
     ctx.moveTo(player.x, player.y);
-    ctx.arc(player.x, player.y, radius, player.facing - ATTACK_ARC_HALF_ANGLE, player.facing + ATTACK_ARC_HALF_ANGLE);
+    const aim = player.attackTime > 0 ? player.attackAim : player.facing;
+    ctx.arc(player.x, player.y, radius, aim - ATTACK_ARC_HALF_ANGLE, aim + ATTACK_ARC_HALF_ANGLE);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = `rgba(255, 241, 168, ${strokeAlpha})`;
@@ -1180,7 +1191,7 @@ export class GameRuntime {
     ctx.shadowBlur = active ? 16 : 8;
     ctx.lineWidth = active ? 4 + pulse * 2 : bossInRange ? 2.8 : 1.4;
     ctx.beginPath();
-    ctx.arc(player.x, player.y, radius, player.facing - ATTACK_ARC_HALF_ANGLE, player.facing + ATTACK_ARC_HALF_ANGLE);
+    ctx.arc(player.x, player.y, radius, aim - ATTACK_ARC_HALF_ANGLE, aim + ATTACK_ARC_HALF_ANGLE);
     ctx.stroke();
     ctx.shadowBlur = 0;
     if (bossInRange) {
@@ -1256,9 +1267,9 @@ export class GameRuntime {
       const progress = clamp(1 - sequence.life / sequence.maxLife, 0, 1);
       const frame = Math.min(sequence.frameCount - 1, Math.floor(progress * sequence.frameCount));
       const alpha = clamp(sequence.life / sequence.maxLife, 0, 1);
-      if (this.feedbackAtlasReady) {
+      if (this.feedbackAtlasReady && sequence.kind !== 'dash' && sequence.kind !== 'charge') {
         this.drawGeneratedFeedbackFrame(sequence, frame, alpha, progress);
-      } else if (this.vfxAtlasReady && sequence.kind !== 'dash' && sequence.kind !== 'self-hit' && sequence.kind !== 'charge') {
+      } else if (this.vfxAtlasReady && sequence.kind !== 'dash' && sequence.kind !== 'charge') {
         this.drawAtlasVfxFrame(sequence, frame, alpha);
       } else {
         this.drawProceduralSequenceFrame(sequence, frame, alpha, progress);
@@ -1274,8 +1285,8 @@ export class GameRuntime {
       guard: 1,
       graze: 2,
       burst: 3
-    } satisfies Record<Exclude<VisualSequence['kind'], 'dash' | 'self-hit' | 'charge'>, number>;
-    const row = rowByKind[sequence.kind as Exclude<VisualSequence['kind'], 'dash' | 'self-hit' | 'charge'>] ?? 0;
+    } satisfies Record<Exclude<VisualSequence['kind'], 'dash' | 'charge'>, number>;
+    const row = rowByKind[sequence.kind as Exclude<VisualSequence['kind'], 'dash' | 'charge'>] ?? 0;
     const sourceX = Math.min(3, frame) * this.vfxFrameSize;
     const sourceY = row * this.vfxFrameSize;
     const frameScale = sequence.kind === 'burst' ? 1.35 : 1;
@@ -1313,12 +1324,9 @@ export class GameRuntime {
       guard: 0,
       impact: 1,
       graze: 1,
-      burst: 1,
-      'self-hit': 2,
-      dash: 3,
-      charge: 3
-    } satisfies Record<VisualSequence['kind'], number>;
-    const row = rowByKind[sequence.kind];
+      burst: 1
+    } satisfies Record<Exclude<VisualSequence['kind'], 'dash' | 'charge'>, number>;
+    const row = rowByKind[sequence.kind as Exclude<VisualSequence['kind'], 'dash' | 'charge'>] ?? 0;
     const sourceX = Math.min(GENERATED_VFX_SEQUENCE_FRAMES - 1, frame) * this.feedbackFrameWidth;
     const sourceY = row * this.feedbackFrameHeight;
     const frameScale = sequence.kind === 'charge' || sequence.kind === 'dash'
@@ -1705,10 +1713,6 @@ export class GameRuntime {
         this.spawnBurst(this.world.boss.x, this.world.boss.y, '#fff1a8', 26, 240);
         this.spawnRing(this.world.boss.x, this.world.boss.y, '#d6b45f', this.world.boss.radius * 2.8);
         this.spawnSequence(this.world.boss.x, this.world.boss.y, 'burst', '#fff1a8', 144, 0, 0.8);
-      } else if (event.type === 'boss-self-hit') {
-        this.spawnBurst(this.world.boss.x, this.world.boss.y, '#8bf2cf', 18, 210);
-        this.spawnRing(this.world.boss.x, this.world.boss.y, '#70d8d1', this.world.boss.radius * 2.2);
-        this.spawnSequence(this.world.boss.x, this.world.boss.y, 'self-hit', '#8bf2cf', 124, Math.random() * Math.PI, 0.56);
       } else if (event.type === 'boss-charged') {
         this.spawnBurst(this.world.boss.x, this.world.boss.y, '#ff8b8b', 12, 180);
         this.spawnSequence(this.world.boss.x, this.world.boss.y, 'charge', '#ff8b8b', 128, Math.random() * Math.PI, 0.42);
@@ -1808,9 +1812,10 @@ export class GameRuntime {
     const dx = boss.x - player.x;
     const dy = boss.y - player.y;
     const distance = Math.hypot(dx, dy);
-    if (distance > ATTACK_ARC_RADIUS) return false;
+    if (distance > ATTACK_ARC_RADIUS + 26) return false;
     const angle = Math.atan2(dy, dx);
-    return Math.abs(normalizeAngle(angle - player.facing)) <= ATTACK_ARC_HALF_ANGLE;
+    const aim = player.attackTime > 0 ? player.attackAim : player.facing;
+    return Math.abs(normalizeAngle(angle - aim)) <= ATTACK_ARC_HALF_ANGLE + Math.PI / 20;
   }
 }
 
@@ -1894,6 +1899,37 @@ function normalizeAngle(angle: number): number {
   while (value > Math.PI) value -= Math.PI * 2;
   while (value < -Math.PI) value += Math.PI * 2;
   return value;
+}
+
+function createBattleBeatGrid(analysis: AudioAnalysis, bpm: number, firstBeat: number): number[] {
+  if (analysis.calibration?.confirmed) {
+    return createMetronomeBeatGrid(bpm, firstBeat, analysis.duration);
+  }
+
+  const detected = analysis.beats
+    .map((beat) => beat.time)
+    .filter((time) => Number.isFinite(time) && time >= 0 && time <= analysis.duration);
+  if (detected.length >= 4) {
+    return detected;
+  }
+
+  return createMetronomeBeatGrid(bpm, firstBeat, analysis.duration);
+}
+
+function createMetronomeBeatGrid(bpm: number, firstBeat: number, duration: number): number[] {
+  const interval = 60 / Math.max(1, bpm);
+  const beats: number[] = [];
+  let time = firstBeat;
+  while (time > 0) {
+    time -= interval;
+  }
+  while (time < 0) {
+    time += interval;
+  }
+  for (; time <= duration + 0.001; time += interval) {
+    beats.push(Math.round(time * 1000) / 1000);
+  }
+  return beats;
 }
 
 function clamp(value: number, min: number, max: number): number {

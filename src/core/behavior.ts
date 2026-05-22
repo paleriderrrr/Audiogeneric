@@ -2,7 +2,15 @@ import { createRuleBehaviorTimeline, type BehaviorGenerationInput } from '../beh
 import type { MusicSegment } from '../audio/types.js';
 
 export type SegmentLabel = MusicSegment['label'];
-export type BossMovement = 'idle' | 'wander' | 'dash' | 'orbit' | 'shake';
+export type BossMovement =
+  | 'idle'
+  | 'wander'
+  | 'dash'
+  | 'orbit'
+  | 'shake'
+  | 'chase'
+  | 'keep-distance'
+  | 'outer-orbit';
 export type BossAttack =
   | 'none'
   | 'sparse-ring'

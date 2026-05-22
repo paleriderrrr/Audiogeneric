@@ -37,3 +37,16 @@ test('reports upcoming beat timing for visual and attack scheduling', () => {
   assert.equal(rhythm.isOnBeat(0.35), false);
   assert.ok(Math.abs(rhythm.timeToNextBeat(0.4) - 0.3) < 0.00001);
 });
+
+test('uses detected beat grid before the derived metronome phase', () => {
+  const rhythm = createRhythmTracker({
+    bpm: 120,
+    firstBeat: 0,
+    duration: 8,
+    beatGrid: [0.18, 0.69, 1.17, 1.68]
+  });
+
+  assert.equal(rhythm.isOnBeat(1.17), true);
+  assert.equal(rhythm.isOnBeat(1), false);
+  assert.ok(Math.abs(rhythm.timeToNextBeat(1.18) - 0.5) < 0.00001);
+});

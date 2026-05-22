@@ -2,7 +2,15 @@ import type { MusicSegment } from '../audio/types.js';
 
 export type SegmentLabel = MusicSegment['label'];
 export type CombatIntent = 'warmup' | 'pressure' | 'chase' | 'lockdown' | 'burst' | 'release';
-export type MovementMode = 'idle' | 'wander' | 'dash' | 'orbit' | 'shake';
+export type MovementMode =
+  | 'idle'
+  | 'wander'
+  | 'dash'
+  | 'orbit'
+  | 'shake'
+  | 'chase'
+  | 'keep-distance'
+  | 'outer-orbit';
 export type AttackMode =
   | 'none'
   | 'sparse-ring'

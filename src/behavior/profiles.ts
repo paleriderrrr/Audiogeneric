@@ -48,6 +48,22 @@ const STATIC_PROBE: Record<PhaseRole, MovementMode> = {
   recovery: 'idle'
 };
 
+const PURSUIT_SWEEP: Record<PhaseRole, MovementMode> = {
+  setup: 'keep-distance',
+  pressure: 'chase',
+  burst: 'chase',
+  reposition: 'outer-orbit',
+  recovery: 'keep-distance'
+};
+
+const SPACING_PRESSURE: Record<PhaseRole, MovementMode> = {
+  setup: 'keep-distance',
+  pressure: 'keep-distance',
+  burst: 'chase',
+  reposition: 'outer-orbit',
+  recovery: 'wander'
+};
+
 const LIGHT_RING: Record<PhaseRole, AttackMode> = {
   setup: 'none',
   pressure: 'sparse-ring',
@@ -91,9 +107,9 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         phasePattern: ['setup', 'pressure', 'reposition', 'recovery'],
         movementByRole: {
           setup: 'wander',
-          pressure: 'wander',
+          pressure: 'keep-distance',
           burst: 'wander',
-          reposition: 'orbit',
+          reposition: 'outer-orbit',
           recovery: 'idle'
         },
         attackByRole: {
@@ -129,16 +145,12 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'slow',
         phasePattern: ['pressure', 'reposition', 'pressure', 'recovery'],
         movementByRole: {
-          setup: 'wander',
-          pressure: 'dash',
-          burst: 'dash',
-          reposition: 'orbit',
-          recovery: 'wander'
+          ...PURSUIT_SWEEP
         },
         attackByRole: {
           setup: 'none',
           pressure: 'melee-sweep',
-          burst: 'aimed-burst',
+          burst: 'charge-strike',
           reposition: 'none',
           recovery: 'none'
         },
@@ -155,16 +167,12 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'any',
         phasePattern: ['setup', 'pressure', 'reposition', 'recovery'],
         movementByRole: {
-          setup: 'wander',
-          pressure: 'wander',
-          burst: 'dash',
-          reposition: 'orbit',
-          recovery: 'wander'
+          ...SPACING_PRESSURE
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'sparse-ring',
-          burst: 'aimed-burst',
+          pressure: 'melee-sweep',
+          burst: 'charge-strike',
           reposition: 'none',
           recovery: 'none'
         },
@@ -181,16 +189,16 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'fast',
         phasePattern: ['setup', 'pressure', 'burst', 'recovery'],
         movementByRole: {
-          setup: 'orbit',
-          pressure: 'orbit',
-          burst: 'dash',
-          reposition: 'orbit',
+          setup: 'keep-distance',
+          pressure: 'outer-orbit',
+          burst: 'chase',
+          reposition: 'outer-orbit',
           recovery: 'wander'
         },
         attackByRole: {
           setup: 'none',
           pressure: 'laser-ray',
-          burst: 'aimed-burst',
+          burst: 'melee-sweep',
           reposition: 'none',
           recovery: 'none'
         },
@@ -208,15 +216,15 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         phasePattern: ['setup', 'pressure', 'reposition', 'burst', 'recovery'],
         movementByRole: {
           setup: 'wander',
-          pressure: 'dash',
-          burst: 'dash',
-          reposition: 'wander',
+          pressure: 'chase',
+          burst: 'chase',
+          reposition: 'keep-distance',
           recovery: 'idle'
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'sparse-ring',
-          burst: 'aimed-burst',
+          pressure: 'melee-sweep',
+          burst: 'charge-strike',
           reposition: 'none',
           recovery: 'none'
         },
@@ -245,16 +253,16 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'any',
         phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'recovery'],
         movementByRole: {
-          setup: 'orbit',
-          pressure: 'orbit',
-          burst: 'dash',
-          reposition: 'orbit',
+          setup: 'outer-orbit',
+          pressure: 'keep-distance',
+          burst: 'chase',
+          reposition: 'outer-orbit',
           recovery: 'wander'
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'sparse-ring',
-          burst: 'aimed-burst',
+          pressure: 'melee-sweep',
+          burst: 'charge-strike',
           reposition: 'none',
           recovery: 'none'
         },
@@ -271,16 +279,16 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'fast',
         phasePattern: ['setup', 'reposition', 'pressure', 'burst', 'recovery'],
         movementByRole: {
-          setup: 'dash',
-          pressure: 'orbit',
-          burst: 'dash',
-          reposition: 'dash',
+          setup: 'keep-distance',
+          pressure: 'chase',
+          burst: 'chase',
+          reposition: 'outer-orbit',
           recovery: 'wander'
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'aimed-burst',
-          burst: 'aimed-burst',
+          pressure: 'laser-ray',
+          burst: 'melee-sweep',
           reposition: 'none',
           recovery: 'none'
         },
@@ -309,16 +317,16 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'any',
         phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'recovery'],
         movementByRole: {
-          setup: 'wander',
-          pressure: 'dash',
-          burst: 'dash',
-          reposition: 'wander',
+          setup: 'keep-distance',
+          pressure: 'chase',
+          burst: 'chase',
+          reposition: 'outer-orbit',
           recovery: 'idle'
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'aimed-burst',
-          burst: 'screen-ring',
+          pressure: 'melee-sweep',
+          burst: 'explosive-burst',
           reposition: 'none',
           recovery: 'none'
         },
@@ -335,11 +343,11 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'fast',
         phasePattern: ['setup', 'pressure', 'reposition', 'burst', 'recovery'],
         movementByRole: {
-          setup: 'dash',
-          pressure: 'dash',
+          setup: 'keep-distance',
+          pressure: 'chase',
           burst: 'shake',
-          reposition: 'wander',
-          recovery: 'idle'
+          reposition: 'outer-orbit',
+          recovery: 'keep-distance'
         },
         attackByRole: {
           setup: 'none',
@@ -361,11 +369,11 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'mid',
         phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'burst', 'recovery'],
         movementByRole: {
-          setup: 'orbit',
-          pressure: 'dash',
+          setup: 'outer-orbit',
+          pressure: 'chase',
           burst: 'shake',
-          reposition: 'orbit',
-          recovery: 'idle'
+          reposition: 'outer-orbit',
+          recovery: 'keep-distance'
         },
         attackByRole: {
           setup: 'none',
@@ -399,15 +407,15 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'any',
         phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'burst', 'recovery'],
         movementByRole: {
-          setup: 'dash',
+          setup: 'outer-orbit',
           pressure: 'shake',
           burst: 'shake',
-          reposition: 'dash',
-          recovery: 'orbit'
+          reposition: 'chase',
+          recovery: 'keep-distance'
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'lane-burst',
+          pressure: 'charge-strike',
           burst: 'explosive-burst',
           reposition: 'none',
           recovery: 'none'
@@ -425,10 +433,10 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'fast',
         phasePattern: ['setup', 'pressure', 'reposition', 'burst', 'recovery'],
         movementByRole: {
-          setup: 'dash',
-          pressure: 'dash',
+          setup: 'keep-distance',
+          pressure: 'chase',
           burst: 'shake',
-          reposition: 'dash',
+          reposition: 'outer-orbit',
           recovery: 'wander'
         },
         attackByRole: {
@@ -451,11 +459,11 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         bpmBand: 'mid',
         phasePattern: ['setup', 'pressure', 'burst', 'reposition', 'recovery'],
         movementByRole: {
-          setup: 'orbit',
+          setup: 'outer-orbit',
           pressure: 'shake',
-          burst: 'dash',
-          reposition: 'orbit',
-          recovery: 'idle'
+          burst: 'chase',
+          reposition: 'outer-orbit',
+          recovery: 'keep-distance'
         },
         attackByRole: {
           setup: 'none',
@@ -505,9 +513,9 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         phasePattern: ['setup', 'pressure', 'reposition', 'recovery'],
         movementByRole: {
           setup: 'wander',
-          pressure: 'wander',
+          pressure: 'keep-distance',
           burst: 'wander',
-          reposition: 'orbit',
+          reposition: 'outer-orbit',
           recovery: 'idle'
         },
         attackByRole: {

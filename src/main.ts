@@ -2,7 +2,7 @@ import './styles.css';
 import { analyzeAudioFile } from './audio/analyzer.js';
 import { calibrateWarmupTaps } from './audio/pipeline.js';
 import type { AudioAnalysis } from './audio/types.js';
-import type { LlmBehaviorProvider } from './behavior/factory.js';
+import { createProxyBehaviorProvider } from './behavior/proxy-provider.js';
 import { GameRuntime, type RuntimeBehaviorMode } from './game/runtime.js';
 import { createResultMarkup, createStatusMarkup, type StatusPhase } from './ui/status-presenter.js';
 import { runWithDisplayedError } from './ui/task.js';
@@ -123,12 +123,7 @@ let busy = false;
 let stage: AppStage = 'prepare';
 let preparedAnalysis: AudioAnalysis | null = null;
 let selectedMode: RuntimeBehaviorMode = 'rules';
-
-const unavailableLlmProvider: LlmBehaviorProvider = {
-  async generate() {
-    throw new Error('未配置大模型服务，已回退到规则模式。');
-  }
-};
+const proxyLlmProvider = createProxyBehaviorProvider();
 
 const runtime = new GameRuntime(gameCanvas, {
   onStatus(message) {
@@ -251,7 +246,7 @@ async function startBattle(): Promise<void> {
       : '正在以规则模式生成战斗行为。');
     await runtime.start(preparedAnalysis, Number(difficultySlider.value), {
       behaviorMode: selectedMode,
-      llmProvider: selectedMode === 'llm-preferred' ? unavailableLlmProvider : undefined
+      llmProvider: selectedMode === 'llm-preferred' ? proxyLlmProvider : undefined
     });
     gameCanvas.focus();
   } finally {
@@ -403,7 +398,7 @@ function readSelectedMode(): RuntimeBehaviorMode {
 
 function updateModeNote(): void {
   modeNoteView.textContent = selectedMode === 'llm-preferred'
-    ? '大模型模式：优先请求模型生成敌人行动；未配置模型服务时会自动回退到规则模式。'
+    ? '大模型模式：通过本地代理请求 MiMo 生成敌人行动；模型失败或输出无效时会自动回退到规则模式。'
     : '规则模式：使用本地节奏规则生成敌人行动，稳定且响应最快。';
 }
 

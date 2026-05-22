@@ -1,6 +1,15 @@
 import type { BehaviorModule, BehaviorTimeline } from './types.js';
 
-const VALID_MOVEMENTS = new Set(['idle', 'wander', 'dash', 'orbit', 'shake']);
+const VALID_MOVEMENTS = new Set([
+  'idle',
+  'wander',
+  'dash',
+  'orbit',
+  'shake',
+  'chase',
+  'keep-distance',
+  'outer-orbit'
+]);
 const VALID_ATTACKS = new Set([
   'none',
   'sparse-ring',

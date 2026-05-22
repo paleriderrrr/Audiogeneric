@@ -15,12 +15,12 @@ test('maps calm and intense music segments to distinct boss skill modules', () =
 
   const plan = createBehaviorPlan(segments, 120, 1);
 
-  assert.equal(plan[0].movement, 'wander');
-  assert.equal(plan[0].attack, 'sparse-ring');
-  assert.equal(plan[1].movement, 'dash');
-  assert.equal(plan[1].attack, 'aimed-burst');
+  assert.equal(plan[0].movement, 'keep-distance');
+  assert.equal(plan[0].attack, 'melee-sweep');
+  assert.equal(plan[1].movement, 'chase');
+  assert.equal(plan[1].attack, 'melee-sweep');
   assert.equal(plan[2].movement, 'shake');
-  assert.equal(plan[2].attack, 'lane-burst');
+  assert.equal(plan[2].attack, 'charge-strike');
   assert.equal(getBehaviorAtTime(plan, 15).label, 'chorus');
 });
 

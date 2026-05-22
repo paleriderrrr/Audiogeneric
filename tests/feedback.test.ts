@@ -32,16 +32,6 @@ test('falls back to projectile pressure feedback when no higher-priority event e
   assert.equal(feedback?.tone, 'warning');
 });
 
-test('surfaces boss self damage above generic attack warnings', () => {
-  const feedback = pickCombatFeedback([
-    { type: 'projectiles-fired' },
-    { type: 'boss-self-hit' }
-  ]);
-
-  assert.equal(feedback?.text, '反噬命中');
-  assert.equal(feedback?.bossFlash, 'hit');
-});
-
 test('reports charge pressure as a warning cue', () => {
   const feedback = pickCombatFeedback([
     { type: 'boss-charged' }
