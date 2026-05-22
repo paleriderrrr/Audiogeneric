@@ -352,7 +352,7 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         attackByRole: {
           setup: 'none',
           pressure: 'laser-ray',
-          burst: 'explosive-burst',
+          burst: 'laser-barrage',
           reposition: 'none',
           recovery: 'none'
         },
@@ -377,7 +377,7 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'laser-ray',
+          pressure: 'cone-cleave',
           burst: 'explosive-burst',
           reposition: 'none',
           recovery: 'none'
@@ -415,8 +415,8 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         },
         attackByRole: {
           setup: 'none',
-          pressure: 'charge-strike',
-          burst: 'explosive-burst',
+          pressure: 'charge-sweep',
+          burst: 'ground-slam',
           reposition: 'none',
           recovery: 'none'
         },
@@ -442,7 +442,7 @@ export const SEGMENT_PROFILES: Record<SegmentLabel, SegmentProfile> = {
         attackByRole: {
           setup: 'none',
           pressure: 'charge-strike',
-          burst: 'explosive-burst',
+          burst: 'charge-sweep',
           reposition: 'none',
           recovery: 'none'
         },

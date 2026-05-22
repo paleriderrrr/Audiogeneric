@@ -52,7 +52,19 @@ export interface Projectile {
   grazed: boolean;
   kind?: 'bullet' | 'laser' | 'explosion' | 'melee';
   age?: number;
-  bossCollisionDelay?: number;
+}
+
+export interface ActiveHazard {
+  kind: 'laser' | 'circle' | 'cone';
+  x: number;
+  y: number;
+  angle: number;
+  radius: number;
+  halfAngle: number;
+  width: number;
+  reach: number;
+  damage: number;
+  damageAt: number;
 }
 
 export interface WorldEvent {
@@ -63,9 +75,14 @@ export interface WorldEvent {
     | 'dash-blocked-by-cooldown'
     | 'projectiles-fired'
     | 'boss-laser'
+    | 'boss-laser-blast'
     | 'boss-sweep'
     | 'boss-charged'
+    | 'boss-area-warning'
+    | 'boss-area-blast'
     | 'near-graze'
+    | 'player-move'
+    | 'player-move-beat'
     | 'player-attack'
     | 'player-attack-beat'
     | 'attack-blocked-by-cooldown'
@@ -96,6 +113,7 @@ export interface WorldState {
   player: PlayerState;
   boss: BossState;
   projectiles: Projectile[];
+  hazards: ActiveHazard[];
   rhythm: RhythmTracker;
   difficulty: number;
   score: number;
@@ -170,6 +188,7 @@ export function createInitialWorld(config: {
       homeY: centerY - arenaSize * 0.2
     },
     projectiles: [],
+    hazards: [],
     rhythm: config.rhythm,
     difficulty: config.difficulty,
     score: 0,
@@ -189,6 +208,7 @@ export function stepWorld(world: WorldState, dt: number, input: CombatInput): vo
   updatePlayer(world, dt, input, timerSnapshot.dodgeTime);
   updateBoss(world, input.time, dt);
   updateProjectiles(world, dt);
+  resolveHazards(world, input.time);
   resolveCombat(world, input);
   resolveOutcome(world);
 }
@@ -288,9 +308,16 @@ function updatePlayer(world: WorldState, dt: number, input: CombatInput, dodgeTi
     return;
   }
 
-  const length = Math.hypot(input.moveX, input.moveY) || 1;
+  const moveLength = Math.hypot(input.moveX, input.moveY);
+  const length = moveLength || 1;
   player.x = clamp(player.x + (input.moveX / length) * speed * dt, world.arena.minX, world.arena.maxX);
   player.y = clamp(player.y + (input.moveY / length) * speed * dt, world.arena.minY, world.arena.maxY);
+  if (moveLength > 0) {
+    world.events.push({ type: 'player-move' });
+    if (world.rhythm.isOnBeat(input.time)) {
+      world.events.push({ type: 'player-move-beat' });
+    }
+  }
 }
 
 function updateBoss(world: WorldState, time: number, dt: number): void {
@@ -345,9 +372,21 @@ function updateBoss(world: WorldState, time: number, dt: number): void {
 }
 
 function spawnProjectiles(world: WorldState, behavior: BehaviorModule): void {
-  if (behavior.attack === 'none' || behavior.bulletCount <= 0) return;
+  if (behavior.attack === 'none') return;
 
   const difficulty = clamp(world.difficulty, 0.3, 2);
+  if (behavior.attack === 'laser-barrage') {
+    performBossLaser(world, behavior, difficulty);
+    spawnProjectileVolley(world, { ...behavior, attack: 'aimed-burst' }, difficulty);
+    return;
+  }
+
+  if (behavior.attack === 'charge-sweep') {
+    performBossCharge(world, behavior, difficulty);
+    performBossSweep(world, behavior, difficulty);
+    return;
+  }
+
   if (behavior.attack === 'charge-strike') {
     performBossCharge(world, behavior, difficulty);
     return;
@@ -363,23 +402,39 @@ function spawnProjectiles(world: WorldState, behavior: BehaviorModule): void {
     return;
   }
 
+  if (behavior.attack === 'ground-slam') {
+    scheduleCircleHazard(world, behavior, difficulty);
+    return;
+  }
+
+  if (behavior.attack === 'cone-cleave') {
+    scheduleConeHazard(world, behavior, difficulty);
+    return;
+  }
+
+  spawnProjectileVolley(world, behavior, difficulty);
+}
+
+function spawnProjectileVolley(world: WorldState, behavior: BehaviorModule, difficulty: number): void {
+  if (behavior.bulletCount <= 0) return;
+
   const baseCount = Math.max(1, Math.round(behavior.bulletCount * difficulty * 0.5));
   const baseSpeed = behavior.bulletSpeed * (0.92 + difficulty * 0.18);
   const pattern = resolveProjectilePattern(behavior.attack, baseCount, baseSpeed, 8 + Math.round(difficulty * 3));
   const aimedAngle = Math.atan2(world.player.y - world.boss.y, world.player.x - world.boss.x);
   for (let i = 0; i < pattern.count; i += 1) {
     const angle = resolveProjectileAngle(behavior, aimedAngle, pattern.count, i, world.boss.lastBeatSpawnAt);
+    const spawnOffset = world.boss.radius + pattern.spawnClearance + 6;
     world.projectiles.push({
-      x: world.boss.x,
-      y: world.boss.y,
+      x: world.boss.x + Math.cos(angle) * spawnOffset,
+      y: world.boss.y + Math.sin(angle) * spawnOffset,
       vx: Math.cos(angle) * pattern.speed,
       vy: Math.sin(angle) * pattern.speed,
       radius: pattern.radius,
       damage: pattern.damage,
       grazed: false,
       kind: pattern.kind,
-      age: 0,
-      bossCollisionDelay: pattern.bossCollisionDelay
+      age: 0
     });
   }
   world.events.push({ type: 'projectiles-fired' });
@@ -394,18 +449,18 @@ function resolveProjectilePattern(
   count: number;
   speed: number;
   radius: number;
+  spawnClearance: number;
   damage: number;
   kind: NonNullable<Projectile['kind']>;
-  bossCollisionDelay: number;
 } {
   if (attack === 'explosive-burst') {
     return {
       count: Math.max(3, Math.ceil(baseCount * 0.65)),
       speed: baseSpeed * 0.62,
       radius: 16,
+      spawnClearance: 16 * 3.2,
       damage: baseDamage + 4,
-      kind: 'explosion',
-      bossCollisionDelay: 0.34
+      kind: 'explosion'
     };
   }
 
@@ -413,9 +468,9 @@ function resolveProjectilePattern(
     count: baseCount,
     speed: baseSpeed,
     radius: 6,
+    spawnClearance: 6,
     damage: baseDamage,
-    kind: 'bullet',
-    bossCollisionDelay: 0.28
+    kind: 'bullet'
   };
 }
 
@@ -447,23 +502,65 @@ function performBossLaser(world: WorldState, behavior: BehaviorModule, difficult
   const player = world.player;
   const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
   const reach = clamp(170 + behavior.bulletSpeed * 1.15, 220, 560) * (0.92 + difficulty * 0.08);
-  const width = 10 + behavior.warningIntensity * 18;
-  const endX = boss.x + Math.cos(angle) * reach;
-  const endY = boss.y + Math.sin(angle) * reach;
+  const width = 6 + behavior.warningIntensity * 14;
+  const muzzleOffset = boss.radius + width + 8;
+  const origin = projectPoint(boss.x, boss.y, angle, muzzleOffset);
   world.events.push({ type: 'boss-laser' });
-
-  if (distancePointToSegment(player.x, player.y, boss.x, boss.y, endX, endY) > player.radius + width) return;
-
-  applyBossDirectDamage(world, 10 + Math.round(difficulty * 4 + behavior.warningIntensity * 4));
+  world.hazards.push({
+    kind: 'laser',
+    x: origin.x,
+    y: origin.y,
+    angle,
+    radius: 0,
+    halfAngle: 0,
+    width,
+    reach: Math.max(48, reach - muzzleOffset),
+    damage: 10 + Math.round(difficulty * 4 + behavior.warningIntensity * 4),
+    damageAt: boss.lastBeatSpawnAt + 0.22
+  });
 }
 
 function performBossSweep(world: WorldState, behavior: BehaviorModule, difficulty: number): void {
-  const range = world.boss.radius + world.player.radius + 44 + behavior.warningIntensity * 32;
+  const range = world.boss.radius + world.player.radius + 72 + behavior.warningIntensity * 54;
   world.events.push({ type: 'boss-sweep' });
 
   if (distance(world.boss, world.player) > range) return;
 
   applyBossDirectDamage(world, 12 + Math.round(difficulty * 4 + behavior.warningIntensity * 3));
+}
+
+function scheduleCircleHazard(world: WorldState, behavior: BehaviorModule, difficulty: number): void {
+  const radius = 52 + behavior.warningIntensity * 58 + difficulty * 8;
+  world.hazards.push({
+    kind: 'circle',
+    x: world.player.x,
+    y: world.player.y,
+    angle: 0,
+    radius,
+    halfAngle: 0,
+    width: 0,
+    reach: 0,
+    damage: 13 + Math.round(difficulty * 5 + behavior.warningIntensity * 5),
+    damageAt: world.boss.lastBeatSpawnAt + 0.26
+  });
+  world.events.push({ type: 'boss-area-warning' });
+}
+
+function scheduleConeHazard(world: WorldState, behavior: BehaviorModule, difficulty: number): void {
+  const angle = Math.atan2(world.player.y - world.boss.y, world.player.x - world.boss.x);
+  world.hazards.push({
+    kind: 'cone',
+    x: world.boss.x,
+    y: world.boss.y,
+    angle,
+    radius: 135 + behavior.warningIntensity * 90 + difficulty * 12,
+    halfAngle: Math.PI * (0.22 + behavior.warningIntensity * 0.12),
+    width: 0,
+    reach: 0,
+    damage: 12 + Math.round(difficulty * 5 + behavior.warningIntensity * 4),
+    damageAt: world.boss.lastBeatSpawnAt + 0.24
+  });
+  world.events.push({ type: 'boss-area-warning' });
 }
 
 function performBossCharge(world: WorldState, behavior: BehaviorModule, difficulty: number): void {
@@ -512,6 +609,36 @@ function updateProjectiles(world: WorldState, dt: number): void {
       projectile.y >= world.arena.minY - 40 &&
       projectile.y <= world.arena.maxY + 40
   );
+}
+
+function resolveHazards(world: WorldState, time: number): void {
+  for (let index = world.hazards.length - 1; index >= 0; index -= 1) {
+    const hazard = world.hazards[index];
+    if (time < hazard.damageAt) continue;
+    world.hazards.splice(index, 1);
+    world.events.push({ type: hazard.kind === 'laser' ? 'boss-laser-blast' : 'boss-area-blast' });
+    if (!hazardHitsPlayer(hazard, world.player)) continue;
+    applyBossDirectDamage(world, hazard.damage);
+  }
+}
+
+function hazardHitsPlayer(hazard: ActiveHazard, player: PlayerState): boolean {
+  if (hazard.kind === 'circle') {
+    return Math.hypot(player.x - hazard.x, player.y - hazard.y) <= hazard.radius + player.radius;
+  }
+
+  if (hazard.kind === 'cone') {
+    const dx = player.x - hazard.x;
+    const dy = player.y - hazard.y;
+    const distanceToPlayer = Math.hypot(dx, dy);
+    const angleToPlayer = Math.atan2(dy, dx);
+    return distanceToPlayer <= hazard.radius + player.radius
+      && Math.abs(normalizeAngle(angleToPlayer - hazard.angle)) <= hazard.halfAngle;
+  }
+
+  const endX = hazard.x + Math.cos(hazard.angle) * hazard.reach;
+  const endY = hazard.y + Math.sin(hazard.angle) * hazard.reach;
+  return distancePointToSegment(player.x, player.y, hazard.x, hazard.y, endX, endY) <= player.radius + hazard.width;
 }
 
 function resolveCombat(world: WorldState, input: CombatInput): void {
@@ -648,6 +775,13 @@ function distancePointToSegment(
   const closestX = startX + segmentX * clampedProjection;
   const closestY = startY + segmentY * clampedProjection;
   return Math.hypot(pointX - closestX, pointY - closestY);
+}
+
+function projectPoint(originX: number, originY: number, angle: number, distance: number): { x: number; y: number } {
+  return {
+    x: originX + Math.cos(angle) * distance,
+    y: originY + Math.sin(angle) * distance
+  };
 }
 
 function normalizeAngle(angle: number): number {

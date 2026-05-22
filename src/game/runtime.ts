@@ -413,6 +413,7 @@ export class GameRuntime {
     this.drawArena(energy, time);
     this.drawBeatPulse();
     this.drawAttackTelegraph(time);
+    this.drawHazards(time);
     this.drawProjectiles(time);
     this.drawCore(time);
     this.drawBossHealthBar();
@@ -641,7 +642,7 @@ export class GameRuntime {
     ctx.strokeStyle = '#ff8b8b';
     ctx.lineWidth = 1.5 + behavior.warningIntensity * 2;
 
-    if (behavior.attack === 'charge-strike') {
+    if (behavior.attack === 'charge-strike' || behavior.attack === 'charge-sweep') {
       ctx.strokeStyle = '#ff8b8b';
       ctx.shadowColor = '#ff8b8b';
       ctx.lineWidth = 4 + behavior.warningIntensity * 3;
@@ -649,17 +650,44 @@ export class GameRuntime {
       ctx.beginPath();
       ctx.arc(this.world.player.x, this.world.player.y, 26 + behavior.warningIntensity * 18, 0, Math.PI * 2);
       ctx.stroke();
+      if (behavior.attack === 'charge-sweep') {
+        this.drawSweepTelegraph(boss.x, boss.y, boss.radius * (3.4 + behavior.warningIntensity * 2.2));
+      }
     } else if (behavior.attack === 'melee-sweep') {
       ctx.strokeStyle = '#ff8b8b';
       ctx.shadowColor = '#ff8b8b';
       ctx.lineWidth = 2 + behavior.warningIntensity * 3;
-      this.drawMeleeTelegraph(boss.x, boss.y, aimedAngle, boss.radius * (2.4 + behavior.warningIntensity * 1.8));
-    } else if (behavior.attack === 'laser-ray') {
+      this.drawSweepTelegraph(boss.x, boss.y, boss.radius * (3.4 + behavior.warningIntensity * 2.2));
+    } else if (behavior.attack === 'cone-cleave') {
+      ctx.strokeStyle = '#ff8b8b';
+      ctx.shadowColor = '#ff8b8b';
+      ctx.lineWidth = 2 + behavior.warningIntensity * 3;
+      this.drawMeleeTelegraph(boss.x, boss.y, aimedAngle, boss.radius * 5.6);
+    } else if (behavior.attack === 'ground-slam') {
+      ctx.strokeStyle = '#f4d35e';
+      ctx.shadowColor = '#d6b45f';
+      ctx.lineWidth = 2 + behavior.warningIntensity * 3;
+      ctx.beginPath();
+      ctx.arc(this.world.player.x, this.world.player.y, 52 + behavior.warningIntensity * 58 + this.world.difficulty * 8, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (behavior.attack === 'laser-ray' || behavior.attack === 'laser-barrage') {
       ctx.strokeStyle = '#8bf2cf';
       ctx.shadowColor = '#70d8d1';
       ctx.lineWidth = 2 + behavior.warningIntensity * 2;
-      for (let index = 0; index < Math.min(count, 6); index += 1) {
-        this.drawTelegraphRay(boss.x, boss.y, this.resolveTelegraphAngle(behavior.attack, aimedAngle, count, index), 0, 440);
+      const laserWidth = 6 + behavior.warningIntensity * 14;
+      const laserStartOffset = boss.radius + laserWidth + 8;
+      const laserRayCount = behavior.attack === 'laser-barrage' ? 1 : Math.min(count, 6);
+      for (let index = 0; index < laserRayCount; index += 1) {
+        const laserAngle = behavior.attack === 'laser-barrage'
+          ? aimedAngle
+          : this.resolveTelegraphAngle(behavior.attack, aimedAngle, count, index);
+        this.drawTelegraphRay(boss.x, boss.y, laserAngle, laserStartOffset, 440);
+      }
+      if (behavior.attack === 'laser-barrage') {
+        ctx.strokeStyle = '#ff8b8b';
+        for (let index = 0; index < Math.min(Math.max(4, count), 8); index += 1) {
+          this.drawTelegraphRay(boss.x, boss.y, aimedAngle + (index - 3.5) * 0.16, 64, 280);
+        }
       }
     } else if (behavior.attack === 'explosive-burst') {
       ctx.strokeStyle = '#f4d35e';
@@ -696,13 +724,55 @@ export class GameRuntime {
       const laneOffsets = [-0.42, -0.16, 0.16, 0.42];
       return aimedAngle + laneOffsets[index % laneOffsets.length];
     }
-    if (attack === 'laser-ray') {
+    if (attack === 'laser-ray' || attack === 'laser-barrage') {
       return aimedAngle + (index - (count - 1) / 2) * 0.08;
     }
     if (attack === 'explosive-burst') {
       return (Math.PI * 2 * index) / count + (index % 2 === 0 ? 0.16 : -0.16);
     }
     return (Math.PI * 2 * index) / count;
+  }
+
+  private drawHazards(time: number): void {
+    if (!this.world || this.world.hazards.length === 0) return;
+    const ctx = this.context;
+
+    ctx.save();
+    for (const hazard of this.world.hazards) {
+      const remaining = Math.max(0, hazard.damageAt - time);
+      const pulse = 1 - clamp(remaining / 0.28, 0, 1);
+      const alpha = 0.18 + pulse * 0.3;
+      ctx.globalAlpha = alpha;
+      ctx.shadowBlur = 14 + pulse * 22;
+      ctx.lineWidth = 2 + pulse * 3;
+
+      if (hazard.kind === 'laser') {
+        ctx.strokeStyle = '#8bf2cf';
+        ctx.shadowColor = '#70d8d1';
+        this.drawTelegraphRay(hazard.x, hazard.y, hazard.angle, 0, hazard.reach);
+      } else if (hazard.kind === 'circle') {
+        ctx.strokeStyle = '#f4d35e';
+        ctx.fillStyle = '#f4d35e';
+        ctx.shadowColor = '#d6b45f';
+        ctx.beginPath();
+        ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = Math.min(0.9, alpha * 2);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = '#ff8b8b';
+        ctx.fillStyle = '#ff8b8b';
+        ctx.shadowColor = '#ff8b8b';
+        ctx.beginPath();
+        ctx.moveTo(hazard.x, hazard.y);
+        ctx.arc(hazard.x, hazard.y, hazard.radius, hazard.angle - hazard.halfAngle, hazard.angle + hazard.halfAngle);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = Math.min(0.9, alpha * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   private drawTelegraphRay(originX: number, originY: number, angle: number, startOffset: number, maxLength: number): void {
@@ -733,6 +803,19 @@ export class GameRuntime {
     ctx.fillStyle = '#ff8b8b';
     ctx.fill();
     ctx.globalAlpha *= 2.6;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawSweepTelegraph(originX: number, originY: number, radius: number): void {
+    const ctx = this.context;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(originX, originY, radius, 0, Math.PI * 2);
+    ctx.globalAlpha *= 0.22;
+    ctx.fillStyle = '#ff8b8b';
+    ctx.fill();
+    ctx.globalAlpha *= 3.1;
     ctx.stroke();
     ctx.restore();
   }
@@ -848,8 +931,11 @@ export class GameRuntime {
       const kind = projectile.kind ?? 'bullet';
       const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
       const trailLength = kind === 'laser' ? 72 : kind === 'explosion' ? 22 : kind === 'melee' ? 46 : 36;
-      const trailX = projectile.x - (projectile.vx / speed) * trailLength;
-      const trailY = projectile.y - (projectile.vy / speed) * trailLength;
+      const unclampedTrailX = projectile.x - (projectile.vx / speed) * trailLength;
+      const unclampedTrailY = projectile.y - (projectile.vy / speed) * trailLength;
+      const trailEnd = this.clampProjectileTrailEnd(projectile, unclampedTrailX, unclampedTrailY);
+      const trailX = trailEnd.x;
+      const trailY = trailEnd.y;
       const coreColor = projectile.grazed
         ? '#8bf2cf'
         : kind === 'laser'
@@ -1527,12 +1613,66 @@ export class GameRuntime {
     });
   }
 
+  private clampProjectileTrailEnd(
+    projectile: NonNullable<WorldState['projectiles'][number]>,
+    trailX: number,
+    trailY: number
+  ): { x: number; y: number } {
+    if (!this.world) return { x: trailX, y: trailY };
+    const minDistance = this.world.boss.radius + 6;
+    if (Math.hypot(trailX - this.world.boss.x, trailY - this.world.boss.y) >= minDistance) {
+      return { x: trailX, y: trailY };
+    }
+
+    const dx = projectile.x - this.world.boss.x;
+    const dy = projectile.y - this.world.boss.y;
+    const outwardLength = Math.hypot(dx, dy) || 1;
+    return {
+      x: this.world.boss.x + (dx / outwardLength) * minDistance,
+      y: this.world.boss.y + (dy / outwardLength) * minDistance
+    };
+  }
+
+  private resolveLaserFeedbackOrigin(): { x: number; y: number } {
+    if (!this.world) return { x: 0, y: 0 };
+    const laserHazard = [...this.world.hazards].reverse().find((hazard) => hazard.kind === 'laser');
+    if (laserHazard) {
+      return { x: laserHazard.x, y: laserHazard.y };
+    }
+
+    const angle = Math.atan2(this.world.player.y - this.world.boss.y, this.world.player.x - this.world.boss.x);
+    return projectPoint(this.world.boss.x, this.world.boss.y, angle, this.world.boss.radius + 20);
+  }
+
+  private resolveProjectileFeedbackOrigin(): { x: number; y: number; angle: number } {
+    if (!this.world) return { x: 0, y: 0, angle: 0 };
+    const nearestProjectile = this.world.projectiles
+      .slice()
+      .sort((left, right) => (
+        Math.hypot(left.x - this.world!.boss.x, left.y - this.world!.boss.y)
+        - Math.hypot(right.x - this.world!.boss.x, right.y - this.world!.boss.y)
+      ))[0];
+
+    if (nearestProjectile) {
+      return {
+        x: nearestProjectile.x,
+        y: nearestProjectile.y,
+        angle: Math.atan2(nearestProjectile.vy, nearestProjectile.vx)
+      };
+    }
+
+    const angle = Math.atan2(this.world.player.y - this.world.boss.y, this.world.player.x - this.world.boss.x);
+    const origin = projectPoint(this.world.boss.x, this.world.boss.y, angle, this.world.boss.radius + 18);
+    return { ...origin, angle };
+  }
+
   private drawHud(time: number, energy: number): void {
     if (!this.world) return;
     const stats = this.world.rhythm.getStats();
     const moduleLabel = localizeSegmentLabel(this.world.activeBehavior?.label ?? 'sync');
+    const attackLabel = localizeAttackLabel(this.world.activeBehavior?.attack ?? 'none');
     if (this.world.arena.minX < 96) {
-      this.drawCompactHud(time, energy, stats.combo, stats.accuracy, moduleLabel);
+      this.drawCompactHud(energy, stats.combo, stats.accuracy, moduleLabel, attackLabel);
       return;
     }
     const gutter = 16;
@@ -1552,16 +1692,17 @@ export class GameRuntime {
     this.drawHudText(leftX + 14, 180, `${stats.combo}连 / ${stats.accuracy}%`, '#70d8d1', 11, 800);
 
     this.drawHudPanel(rightX, 24, hudWidth, 64, '段落', moduleLabel, '#70d8d1');
-    this.drawHudPanel(rightX, 100, hudWidth, 64, '时间', `${time.toFixed(1)} / ${this.duration.toFixed(1)}`, '#d6b45f');
-    this.drawHudMeter(rightX + 14, 152, hudWidth - 28, 5, energy, '#d6b45f');
+    this.drawHudPanel(rightX, 100, hudWidth, 64, '招式', attackLabel, '#ff8b8b');
+    this.drawHudPanel(rightX, 176, hudWidth, 64, '时间', `${time.toFixed(1)} / ${this.duration.toFixed(1)}`, '#d6b45f');
+    this.drawHudMeter(rightX + 14, 228, hudWidth - 28, 5, energy, '#d6b45f');
   }
 
   private drawCompactHud(
-    time: number,
     energy: number,
     combo: number,
     accuracy: number,
-    moduleLabel: string
+    moduleLabel: string,
+    attackLabel: string
   ): void {
     if (!this.world) return;
     const x = 16;
@@ -1582,8 +1723,8 @@ export class GameRuntime {
     this.drawHudText(x + columnWidth * 2 + 8, y + 21, '段落', '#8b949d', 9, 800, 0.14);
     this.drawHudText(x + columnWidth * 2 + 8, y + 42, moduleLabel, '#f1f4f3', 13, 800);
 
-    this.drawHudText(x + columnWidth * 3 + 8, y + 21, '时间', '#8b949d', 9, 800, 0.14);
-    this.drawHudText(x + columnWidth * 3 + 8, y + 42, time.toFixed(1), '#f1f4f3', 13, 800);
+    this.drawHudText(x + columnWidth * 3 + 8, y + 21, '招式', '#8b949d', 9, 800, 0.14);
+    this.drawHudText(x + columnWidth * 3 + 8, y + 42, attackLabel, '#f1f4f3', 13, 800);
     this.drawHudMeter(x + columnWidth * 3 + 8, y + 52, columnWidth - 20, 4, energy, '#d6b45f');
   }
 
@@ -1704,6 +1845,10 @@ export class GameRuntime {
     this.bossFlashTimer = Math.max(0, this.bossFlashTimer - dt);
     this.screenShakeTimer = Math.max(0, this.screenShakeTimer - dt);
 
+    const hasAttackBeat = this.world.events.some((event) => event.type === 'player-attack-beat');
+    const hasDashBeat = this.world.events.some((event) => event.type === 'player-dash-beat');
+    const hasBlockBeat = this.world.events.some((event) => event.type === 'player-block-beat' || event.type === 'perfect-defense');
+
     for (const event of this.world.events) {
       if (event.type === 'attack-hit') {
         this.spawnBurst(this.world.boss.x, this.world.boss.y, '#d6b45f', 14, 180);
@@ -1718,15 +1863,17 @@ export class GameRuntime {
         this.spawnSequence(this.world.boss.x, this.world.boss.y, 'charge', '#ff8b8b', 128, Math.random() * Math.PI, 0.42);
       } else if (event.type === 'boss-laser') {
         const angle = Math.atan2(this.world.player.y - this.world.boss.y, this.world.player.x - this.world.boss.x);
-        this.spawnBurst(this.world.boss.x, this.world.boss.y, '#8bf2cf', 10, 190);
-        this.spawnSequence(this.world.boss.x, this.world.boss.y, 'burst', '#8bf2cf', 142, angle, 0.48);
+        const origin = this.resolveLaserFeedbackOrigin();
+        this.spawnBurst(origin.x, origin.y, '#8bf2cf', 10, 190);
+        this.spawnSequence(origin.x, origin.y, 'burst', '#8bf2cf', 142, angle, 0.48);
       } else if (event.type === 'boss-sweep') {
         this.spawnBurst(this.world.boss.x, this.world.boss.y, '#ff8b8b', 14, 170);
         this.spawnRing(this.world.boss.x, this.world.boss.y, '#ff8b8b', this.world.boss.radius * 2.2);
         this.spawnSequence(this.world.boss.x, this.world.boss.y, 'impact', '#ff8b8b', 112, Math.random() * Math.PI, 0.46);
       } else if (event.type === 'projectiles-fired') {
-        this.spawnBurst(this.world.boss.x, this.world.boss.y, '#ff6b6b', 8, 120);
-        this.spawnSequence(this.world.boss.x, this.world.boss.y, 'burst', '#ff8b8b', 82, Math.random() * Math.PI, 0.36);
+        const origin = this.resolveProjectileFeedbackOrigin();
+        this.spawnBurst(origin.x, origin.y, '#ff6b6b', 8, 120);
+        this.spawnSequence(origin.x, origin.y, 'burst', '#ff8b8b', 82, origin.angle, 0.36);
       } else if (event.type === 'near-graze') {
         this.spawnBurst(this.world.player.x, this.world.player.y, '#70d8d1', 5, 110);
         this.spawnRing(this.world.player.x, this.world.player.y, '#8bf2cf', this.world.player.radius * 1.9);
@@ -1747,6 +1894,29 @@ export class GameRuntime {
         this.spawnBurst(this.world.player.x, this.world.player.y, '#fff1a8', 14, 180);
         this.spawnRing(this.world.player.x, this.world.player.y, '#d6b45f', this.world.player.radius * 3.2);
         this.spawnSequence(this.world.player.x, this.world.player.y, 'guard', '#fff1a8', 108, this.world.player.facing, 0.48);
+      } else if (event.type === 'player-attack-beat') {
+        const sparkX = this.world.player.x + Math.cos(this.world.player.facing) * (this.world.player.radius + 28);
+        const sparkY = this.world.player.y + Math.sin(this.world.player.facing) * (this.world.player.radius + 28);
+        this.spawnBurst(sparkX, sparkY, '#fff1a8', 8, 135);
+        this.spawnRing(this.world.player.x, this.world.player.y, '#d6b45f', this.world.player.radius * 1.65);
+        this.spawnSequence(sparkX, sparkY, 'impact', '#d6b45f', 58, this.world.player.facing, 0.24);
+      } else if (event.type === 'player-attack' && !hasAttackBeat) {
+        const sparkX = this.world.player.x + Math.cos(this.world.player.facing) * (this.world.player.radius + 20);
+        const sparkY = this.world.player.y + Math.sin(this.world.player.facing) * (this.world.player.radius + 20);
+        this.spawnBurst(sparkX, sparkY, '#d6b45f', 4, 92);
+      } else if (event.type === 'player-dash-beat') {
+        this.spawnRing(this.world.player.x, this.world.player.y, '#fff1a8', this.world.player.radius * 2.1);
+        this.spawnSequence(this.world.player.x, this.world.player.y, 'dash', '#fff1a8', 64, this.world.player.facing, 0.24);
+      } else if (event.type === 'player-dash' && !hasDashBeat) {
+        this.spawnRing(this.world.player.x, this.world.player.y, '#70d8d1', this.world.player.radius * 1.45);
+      } else if (event.type === 'player-block-beat') {
+        this.spawnRing(this.world.player.x, this.world.player.y, '#8bf2cf', this.world.player.radius * 2.2);
+        this.spawnSequence(this.world.player.x, this.world.player.y, 'guard', '#8bf2cf', 72, this.world.player.facing, 0.28);
+      } else if (event.type === 'player-block' && !hasBlockBeat) {
+        this.spawnRing(this.world.player.x, this.world.player.y, '#70d8d1', this.world.player.radius * 1.75);
+      } else if (event.type === 'attack-blocked-by-cooldown' || event.type === 'dash-blocked-by-cooldown') {
+        this.spawnBurst(this.world.player.x, this.world.player.y, '#ff8b8b', 5, 78);
+        this.spawnRing(this.world.player.x, this.world.player.y, '#ff8b8b', this.world.player.radius * 1.35);
       } else if (event.type === 'victory') {
         this.spawnBurst(this.world.boss.x, this.world.boss.y, '#8bf2cf', 24, 220);
         this.spawnRing(this.world.boss.x, this.world.boss.y, '#d6b45f', this.world.boss.radius * 2.4);
@@ -1833,6 +2003,26 @@ function localizeSegmentLabel(label: string): string {
   return labels[label.toLowerCase()] ?? label;
 }
 
+function localizeAttackLabel(attack: string): string {
+  const labels: Record<string, string> = {
+    none: '待机',
+    'sparse-ring': '稀疏环',
+    'aimed-burst': '瞄准弹',
+    'screen-ring': '全屏环',
+    'lane-burst': '轨道弹',
+    'melee-sweep': '近身扫击',
+    'laser-ray': '光束锁定',
+    'explosive-burst': '爆裂弹',
+    'charge-strike': '冲撞',
+    'ground-slam': '地面震荡',
+    'cone-cleave': '扇形斩',
+    'laser-barrage': '光束连携',
+    'charge-sweep': '冲锋扫击'
+  };
+
+  return labels[attack.toLowerCase()] ?? attack;
+}
+
 function createArena(width: number, height: number): WorldState['arena'] {
   const arenaSize = Math.max(280, Math.min(720, width - 32, height - 32));
   const centerX = width / 2;
@@ -1891,6 +2081,13 @@ function projectRayToArena(
   return {
     x: clamp(originX + dx * distance, arena.minX, arena.maxX),
     y: clamp(originY + dy * distance, arena.minY, arena.maxY)
+  };
+}
+
+function projectPoint(originX: number, originY: number, angle: number, distance: number): { x: number; y: number } {
+  return {
+    x: originX + Math.cos(angle) * distance,
+    y: originY + Math.sin(angle) * distance
   };
 }
 

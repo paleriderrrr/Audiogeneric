@@ -10,7 +10,10 @@ test('maps projectile events to attack-specific sound cues', () => {
 
 test('maps direct boss attacks to distinct sound cues', () => {
   assert.deepEqual(selectSoundCuesForEvents([{ type: 'boss-laser' }], null), ['blip']);
+  assert.deepEqual(selectSoundCuesForEvents([{ type: 'boss-laser-blast' }], null), ['laser']);
   assert.deepEqual(selectSoundCuesForEvents([{ type: 'boss-sweep' }], null), ['tap']);
+  assert.deepEqual(selectSoundCuesForEvents([{ type: 'boss-area-warning' }], null), ['charge']);
+  assert.deepEqual(selectSoundCuesForEvents([{ type: 'boss-area-blast' }], null), ['explosion']);
 });
 
 test('maps major combat feedback to distinct sound cues', () => {
@@ -25,16 +28,21 @@ test('maps major combat feedback to distinct sound cues', () => {
 
 test('maps ordinary player operation events to action-specific short cues', () => {
   const cues = selectSoundCuesForEvents([
+    { type: 'player-move' },
     { type: 'player-attack' },
     { type: 'player-dash' },
     { type: 'player-block' },
     { type: 'dash-blocked-by-cooldown' }
   ], null);
 
-  assert.deepEqual(cues, ['attackTap', 'dashTap', 'guardTap', 'tap']);
+  assert.deepEqual(cues, ['moveTap', 'attackTap', 'dashTap', 'guardTap', 'deny']);
 });
 
 test('maps on-beat player operation events to action-specific accented cues', () => {
+  assert.deepEqual(
+    selectSoundCuesForEvents([{ type: 'player-move' }, { type: 'player-move-beat' }], null),
+    ['moveBeat']
+  );
   assert.deepEqual(
     selectSoundCuesForEvents([{ type: 'player-attack' }, { type: 'player-attack-beat' }], null),
     ['attackBeat']
@@ -53,6 +61,7 @@ test('maps damage and graze feedback to separate concise cues', () => {
   assert.deepEqual(selectSoundCuesForEvents([{ type: 'player-hit' }], null), ['hit']);
   assert.deepEqual(selectSoundCuesForEvents([{ type: 'near-graze' }], null), ['graze']);
   assert.deepEqual(selectSoundCuesForEvents([{ type: 'player-blocked-hit' }], null), ['guardTap']);
+  assert.deepEqual(selectSoundCuesForEvents([{ type: 'attack-blocked-by-cooldown' }], null), ['deny']);
 });
 
 test('plays immediate procedural rhythm cues before sample buffers finish loading', () => {

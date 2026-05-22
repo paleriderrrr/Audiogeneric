@@ -17,11 +17,13 @@ const SOUND_URLS = {
   explosion: new URL('../assets/sfx/explosion.ogg', import.meta.url).href,
   laser: new URL('../assets/sfx/laser.ogg', import.meta.url).href,
   message: new URL('../assets/sfx/message.ogg', import.meta.url).href
-} satisfies Record<SoundCue, string>;
+} satisfies Partial<Record<SoundCue, string>>;
 
 const CUE_VOLUME = {
   tap: 0.11,
   beat: 0.17,
+  moveTap: 0.055,
+  moveBeat: 0.085,
   attackTap: 0.12,
   attackBeat: 0.18,
   dashTap: 0.1,
@@ -34,12 +36,15 @@ const CUE_VOLUME = {
   charge: 0.08,
   explosion: 0.1,
   laser: 0.08,
-  message: 0.1
+  message: 0.1,
+  deny: 0.075
 } satisfies Record<SoundCue, number>;
 
 const CUE_COOLDOWN = {
   tap: 0.025,
   beat: 0.045,
+  moveTap: 0.13,
+  moveBeat: 0.16,
   attackTap: 0.035,
   attackBeat: 0.045,
   dashTap: 0.04,
@@ -52,12 +57,15 @@ const CUE_COOLDOWN = {
   charge: 0.14,
   explosion: 0.12,
   laser: 0.055,
-  message: 0.12
+  message: 0.12,
+  deny: 0.08
 } satisfies Record<SoundCue, number>;
 
 export type SoundCue =
   | 'tap'
   | 'beat'
+  | 'moveTap'
+  | 'moveBeat'
   | 'attackTap'
   | 'attackBeat'
   | 'dashTap'
@@ -70,10 +78,12 @@ export type SoundCue =
   | 'charge'
   | 'explosion'
   | 'laser'
-  | 'message';
+  | 'message'
+  | 'deny';
 
 export function selectSoundCuesForEvents(events: WorldEvent[], activeAttack: BossAttack | null): SoundCue[] {
   const cues: SoundCue[] = [];
+  const hasMoveBeat = hasEvent(events, 'player-move-beat');
   const hasAttackBeat = hasEvent(events, 'player-attack-beat');
   const hasBlockBeat = hasEvent(events, 'player-block-beat');
   const hasDashBeat = hasEvent(events, 'player-dash-beat');
@@ -83,8 +93,14 @@ export function selectSoundCuesForEvents(events: WorldEvent[], activeAttack: Bos
       cues.push(resolveProjectileCue(activeAttack));
     } else if (event.type === 'boss-laser') {
       cues.push('blip');
+    } else if (event.type === 'boss-laser-blast') {
+      cues.push('laser');
     } else if (event.type === 'boss-sweep') {
       cues.push('tap');
+    } else if (event.type === 'boss-area-warning') {
+      cues.push('charge');
+    } else if (event.type === 'boss-area-blast') {
+      cues.push('explosion');
     } else if (event.type === 'boss-charged') {
       cues.push('beat');
     } else if (event.type === 'boss-break') {
@@ -96,12 +112,16 @@ export function selectSoundCuesForEvents(events: WorldEvent[], activeAttack: Bos
       cues.push('beat');
     } else if (event.type === 'player-attack-beat') {
       cues.push('attackBeat');
+    } else if (event.type === 'player-move-beat') {
+      cues.push('moveBeat');
     } else if (event.type === 'player-dash-beat') {
       cues.push('dashBeat');
     } else if (event.type === 'player-block-beat') {
       cues.push('guardBeat');
     } else if (event.type === 'attack-hit' && !hasAttackBeat) {
       cues.push('hit');
+    } else if (event.type === 'player-move' && !hasMoveBeat) {
+      cues.push('moveTap');
     } else if (event.type === 'player-attack' && !hasAttackBeat) {
       cues.push('attackTap');
     } else if (event.type === 'player-dash' && !hasDashBeat) {
@@ -115,9 +135,9 @@ export function selectSoundCuesForEvents(events: WorldEvent[], activeAttack: Bos
     } else if (event.type === 'player-blocked-hit') {
       cues.push('guardTap');
     } else if (event.type === 'dash-blocked-by-cooldown') {
-      cues.push('tap');
+      cues.push('deny');
     } else if (event.type === 'attack-blocked-by-cooldown') {
-      cues.push('tap');
+      cues.push('deny');
     }
   }
   return dedupeAdjacent(cues);
@@ -240,9 +260,9 @@ export class SoundEffectPlayer {
 }
 
 function resolveProjectileCue(activeAttack: BossAttack | null): SoundCue {
-  if (activeAttack === 'laser-ray') return 'blip';
-  if (activeAttack === 'explosive-burst' || activeAttack === 'screen-ring') return 'beat';
-  if (activeAttack === 'charge-strike') return 'beat';
+  if (activeAttack === 'laser-ray' || activeAttack === 'laser-barrage') return 'blip';
+  if (activeAttack === 'explosive-burst' || activeAttack === 'screen-ring' || activeAttack === 'ground-slam') return 'beat';
+  if (activeAttack === 'charge-strike' || activeAttack === 'charge-sweep' || activeAttack === 'cone-cleave') return 'beat';
   return 'blip';
 }
 
@@ -255,6 +275,8 @@ function resolveProceduralCue(cue: SoundCue): {
 } {
   if (cue === 'attackBeat') return { type: 'triangle', startFrequency: 880, endFrequency: 1320, duration: 0.055, gain: 0.12 };
   if (cue === 'attackTap') return { type: 'triangle', startFrequency: 620, endFrequency: 940, duration: 0.045, gain: 0.08 };
+  if (cue === 'moveBeat') return { type: 'triangle', startFrequency: 240, endFrequency: 180, duration: 0.042, gain: 0.07 };
+  if (cue === 'moveTap') return { type: 'triangle', startFrequency: 190, endFrequency: 150, duration: 0.032, gain: 0.045 };
   if (cue === 'dashBeat') return { type: 'square', startFrequency: 760, endFrequency: 1120, duration: 0.045, gain: 0.09 };
   if (cue === 'dashTap') return { type: 'square', startFrequency: 520, endFrequency: 760, duration: 0.038, gain: 0.065 };
   if (cue === 'guardBeat') return { type: 'sine', startFrequency: 520, endFrequency: 720, duration: 0.06, gain: 0.11 };
@@ -262,6 +284,7 @@ function resolveProceduralCue(cue: SoundCue): {
   if (cue === 'beat') return { type: 'triangle', startFrequency: 700, endFrequency: 980, duration: 0.05, gain: 0.09 };
   if (cue === 'blip') return { type: 'sine', startFrequency: 480, endFrequency: 720, duration: 0.035, gain: 0.055 };
   if (cue === 'graze') return { type: 'sine', startFrequency: 960, endFrequency: 1280, duration: 0.032, gain: 0.05 };
+  if (cue === 'deny') return { type: 'square', startFrequency: 170, endFrequency: 120, duration: 0.045, gain: 0.055 };
   return { type: 'sine', startFrequency: 420, endFrequency: 560, duration: 0.035, gain: 0.055 };
 }
 
@@ -273,6 +296,8 @@ function isRhythmInputCue(cue: SoundCue): boolean {
   return (
     cue === 'tap'
     || cue === 'beat'
+    || cue === 'moveTap'
+    || cue === 'moveBeat'
     || cue === 'attackTap'
     || cue === 'attackBeat'
     || cue === 'dashTap'

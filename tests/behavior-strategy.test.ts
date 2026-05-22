@@ -383,7 +383,16 @@ test('rules prefer non-projectile attacks and pursuit spacing movement in active
   }, { strategy: 'rules' });
 
   const activeModules = timeline.modules.filter((module) => module.attack !== 'none');
-  const nonProjectileAttacks = new Set(['melee-sweep', 'laser-ray', 'explosive-burst', 'charge-strike']);
+  const nonProjectileAttacks = new Set([
+    'melee-sweep',
+    'laser-ray',
+    'explosive-burst',
+    'charge-strike',
+    'ground-slam',
+    'cone-cleave',
+    'laser-barrage',
+    'charge-sweep'
+  ]);
   const projectileOnlyAttacks = new Set(['sparse-ring', 'aimed-burst', 'screen-ring', 'lane-burst']);
   const nonProjectileCount = activeModules.filter((module) => nonProjectileAttacks.has(module.attack)).length;
   const projectileOnlyCount = activeModules.filter((module) => projectileOnlyAttacks.has(module.attack)).length;
@@ -421,10 +430,95 @@ test('varies attack and movement groups inside an FFT-heavy section', async () =
     ]
   }, { strategy: 'rules' });
 
-  const nonProjectileAttacks = new Set(['melee-sweep', 'laser-ray', 'explosive-burst', 'charge-strike']);
+  const nonProjectileAttacks = new Set([
+    'melee-sweep',
+    'laser-ray',
+    'explosive-burst',
+    'charge-strike',
+    'ground-slam',
+    'cone-cleave',
+    'laser-barrage',
+    'charge-sweep'
+  ]);
   assert.equal(timeline.modules.filter((module) => module.attack !== 'none').every((module) => nonProjectileAttacks.has(module.attack)), true);
   assert.equal(new Set(timeline.modules.map((module) => module.attack)).size >= 2, true);
   assert.equal(new Set(timeline.modules.map((module) => module.movement)).size >= 2, true);
+});
+
+test('adds coupled attacks to high-pressure chorus and drop sections', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 150,
+    difficulty: 1.8,
+    segments: [
+      { start: 0, end: 24, label: 'chorus', energy: 0.9, highFreqWeight: 0.62, lowFreqWeight: 0.22, intensity: 0.92 },
+      { start: 24, end: 52, label: 'drop', energy: 0.98, highFreqWeight: 0.44, lowFreqWeight: 0.58, intensity: 0.98 }
+    ]
+  }, { strategy: 'rules' });
+
+  const coupledAttacks = new Set(['laser-barrage', 'charge-sweep']);
+
+  assert.equal(timeline.modules.some((module) => coupledAttacks.has(module.attack)), true);
+  assert.equal(timeline.modules
+    .filter((module) => coupledAttacks.has(module.attack))
+    .every((module) => module.pressureLevel >= 78), true);
+});
+
+test('surfaces new threat shapes in ordinary high-energy chorus and drop sections', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 128,
+    difficulty: 1.2,
+    segments: [
+      {
+        start: 0,
+        end: 16,
+        label: 'chorus',
+        energy: 0.88,
+        lowFreqWeight: 0.45,
+        highFreqWeight: 0.48,
+        stability: 0.65,
+        spectralFlux: 0.4,
+        beatDensity: 0.75,
+        intensity: 0.84
+      },
+      {
+        start: 16,
+        end: 40,
+        label: 'drop',
+        energy: 0.86,
+        lowFreqWeight: 0.54,
+        highFreqWeight: 0.42,
+        stability: 0.55,
+        spectralFlux: 0.5,
+        beatDensity: 0.8,
+        intensity: 0.84
+      }
+    ]
+  }, { strategy: 'rules' });
+
+  const attacks = new Set<string>(timeline.modules.map((module) => module.attack));
+  const visibleNewAttacks = new Set(['ground-slam', 'cone-cleave', 'laser-barrage', 'charge-sweep']);
+
+  assert.equal([...visibleNewAttacks].some((attack) => attacks.has(attack)), true);
+  assert.equal(attacks.has('ground-slam') || attacks.has('cone-cleave'), true);
+  assert.equal(attacks.has('laser-barrage') || attacks.has('charge-sweep'), true);
+});
+
+test('pairs melee sweep pressure with pursuit movement in active sections', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    bpm: 132,
+    difficulty: 1.1,
+    segments: [
+      { start: 0, end: 16, label: 'bridge', energy: 0.66, lowFreqWeight: 0.34, highFreqWeight: 0.32, stability: 0.62, intensity: 0.7 }
+    ]
+  }, { strategy: 'rules' });
+
+  const meleeModules = timeline.modules.filter((module) => module.attack === 'melee-sweep');
+
+  assert.equal(meleeModules.length > 0, true);
+  assert.equal(meleeModules.every((module) => ['chase', 'dash', 'shake'].includes(module.movement)), true);
 });
 
 test('splits valid llm modules on FFT segment boundaries and adapts actions to each segment', async () => {

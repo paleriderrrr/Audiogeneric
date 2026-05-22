@@ -19,7 +19,11 @@ const VALID_ATTACKS = new Set([
   'melee-sweep',
   'laser-ray',
   'explosive-burst',
-  'charge-strike'
+  'charge-strike',
+  'ground-slam',
+  'cone-cleave',
+  'laser-barrage',
+  'charge-sweep'
 ]);
 const VALID_INTENTS = new Set(['warmup', 'pressure', 'chase', 'lockdown', 'burst', 'release']);
 const VALID_PHASE_ROLES = new Set(['setup', 'pressure', 'burst', 'reposition', 'recovery']);

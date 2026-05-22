@@ -20,7 +20,7 @@ test('maps calm and intense music segments to distinct boss skill modules', () =
   assert.equal(plan[1].movement, 'chase');
   assert.equal(plan[1].attack, 'melee-sweep');
   assert.equal(plan[2].movement, 'shake');
-  assert.equal(plan[2].attack, 'charge-strike');
+  assert.equal(['charge-strike', 'charge-sweep'].includes(plan[2].attack), true);
   assert.equal(getBehaviorAtTime(plan, 15).label, 'chorus');
 });
 

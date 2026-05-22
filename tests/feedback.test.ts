@@ -45,14 +45,82 @@ test('reports direct boss attack pressure as warning cues', () => {
   const laserFeedback = pickCombatFeedback([
     { type: 'boss-laser' }
   ]);
+  const laserBlastFeedback = pickCombatFeedback([
+    { type: 'boss-laser-blast' }
+  ]);
   const sweepFeedback = pickCombatFeedback([
     { type: 'boss-sweep' }
   ]);
 
   assert.equal(laserFeedback?.text, '光束锁定');
   assert.equal(laserFeedback?.tone, 'warning');
+  assert.equal(laserBlastFeedback?.text, '光束贯穿');
+  assert.equal(laserBlastFeedback?.tone, 'warning');
   assert.equal(sweepFeedback?.text, '近身扫击');
   assert.equal(sweepFeedback?.tone, 'warning');
+});
+
+test('reports area warnings and area blasts distinctly', () => {
+  const warningFeedback = pickCombatFeedback([
+    { type: 'boss-area-warning' }
+  ]);
+  const blastFeedback = pickCombatFeedback([
+    { type: 'boss-area-blast' }
+  ]);
+
+  assert.equal(warningFeedback?.text, '范围预警');
+  assert.equal(warningFeedback?.tone, 'warning');
+  assert.equal(blastFeedback?.text, '范围爆发');
+  assert.equal(blastFeedback?.tone, 'warning');
+  assert.equal((blastFeedback?.screenShake ?? 0) > (warningFeedback?.screenShake ?? 0), true);
+});
+
+test('surfaces beat-synced player actions as light feedback', () => {
+  const attackFeedback = pickCombatFeedback([
+    { type: 'player-attack' },
+    { type: 'player-attack-beat' }
+  ]);
+  const dashFeedback = pickCombatFeedback([
+    { type: 'player-dash' },
+    { type: 'player-dash-beat' }
+  ]);
+  const blockFeedback = pickCombatFeedback([
+    { type: 'player-block' },
+    { type: 'player-block-beat' }
+  ]);
+
+  assert.equal(attackFeedback?.text, '攻击同步');
+  assert.equal(attackFeedback?.tone, 'success');
+  assert.equal(attackFeedback?.bossFlash, 'hit');
+  assert.equal(dashFeedback?.text, '闪避同步');
+  assert.equal(dashFeedback?.playerFlash, 'guard');
+  assert.equal(blockFeedback?.text, '防御同步');
+  assert.equal(blockFeedback?.playerFlash, 'guard');
+});
+
+test('keeps danger feedback above player action feedback', () => {
+  const feedback = pickCombatFeedback([
+    { type: 'player-attack-beat' },
+    { type: 'player-hit' }
+  ]);
+
+  assert.equal(feedback?.text, '注意规避');
+  assert.equal(feedback?.tone, 'danger');
+});
+
+test('reports blocked operation feedback without screen shake', () => {
+  const attackFeedback = pickCombatFeedback([
+    { type: 'attack-blocked-by-cooldown' }
+  ]);
+  const dashFeedback = pickCombatFeedback([
+    { type: 'dash-blocked-by-cooldown' }
+  ]);
+
+  assert.equal(attackFeedback?.text, '攻击冷却');
+  assert.equal(attackFeedback?.tone, 'warning');
+  assert.equal(attackFeedback?.screenShake, 0);
+  assert.equal(dashFeedback?.text, '闪避冷却');
+  assert.equal(dashFeedback?.screenShake, 0);
 });
 
 test('surfaces graze feedback below direct combat events', () => {

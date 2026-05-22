@@ -125,7 +125,7 @@ function createMessages(input: BehaviorGenerationInput): Array<{ role: 'system' 
         '硬性规则：时间轴必须覆盖整首歌，不要有重叠或空隙；相邻模块的 end 必须等于下一个 start。',
         '模块边界优先使用输入的 segment start/end；长段可以拆成 2-4 个微阶段，但微阶段边界必须贴近 beatGrid。',
         '每段至少有一个可感知行动：attack 不能整段都是 none，除非 intro/outro 的 setup/recovery。',
-        '根据 FFT 特征选行动：低频强用 explosive-burst 或 charge-strike；高频强用 laser-ray 或 lane-burst；能量高且不稳定用 screen-ring/explosive-burst；稳定中能量用 sparse-ring/aimed-burst；慢速低能量用 melee-sweep/稀疏弹幕。',
+        '根据 FFT 特征选行动：低频强用 explosive-burst、charge-strike 或 ground-slam；高频强用 laser-ray、laser-barrage 或 lane-burst；能量高且不稳定用 screen-ring/explosive-burst；稳定中能量用 sparse-ring/aimed-burst；慢速低能量用 melee-sweep/稀疏弹幕。',
         '普通段落用 warningIntensity 0.25-0.6，高能 chorus/drop 用 0.6-0.95；fireWindowBeats 必须是 1/2/4/8。',
         '避免连续两个模块完全相同的 attack+movement 组合。',
         'movement 按音乐结构、玩家压力和可读性自由选择，不要为了满足固定偏好强行选择某个移动模式。',
@@ -133,7 +133,7 @@ function createMessages(input: BehaviorGenerationInput): Array<{ role: 'system' 
         'intent=warmup|pressure|chase|lockdown|burst|release',
         'phaseRole=setup|pressure|burst|reposition|recovery',
         'movement=idle|wander|dash|orbit|shake|chase|keep-distance|outer-orbit',
-        'attack=none|sparse-ring|aimed-burst|screen-ring|lane-burst|melee-sweep|laser-ray|explosive-burst|charge-strike',
+        'attack=none|sparse-ring|aimed-burst|screen-ring|lane-burst|melee-sweep|laser-ray|explosive-burst|charge-strike|ground-slam|cone-cleave|laser-barrage|charge-sweep',
         'transitionIn/transitionOut=snap|blend'
       ].join('\n')
     },
@@ -158,7 +158,7 @@ function createMessages(input: BehaviorGenerationInput): Array<{ role: 'system' 
             intent: 'warmup|pressure|chase|lockdown|burst|release',
             phaseRole: 'setup|pressure|burst|reposition|recovery',
             movement: 'idle|wander|dash|orbit|shake|chase|keep-distance|outer-orbit',
-            attack: 'none|sparse-ring|aimed-burst|screen-ring|lane-burst|melee-sweep|laser-ray|explosive-burst|charge-strike',
+            attack: 'none|sparse-ring|aimed-burst|screen-ring|lane-burst|melee-sweep|laser-ray|explosive-burst|charge-strike|ground-slam|cone-cleave|laser-barrage|charge-sweep',
             bulletCount: 'number >= 0',
             bulletSpeed: 'number >= 0',
             fireWindowBeats: 'integer >= 1',
@@ -260,8 +260,8 @@ function createDecisionContext(input: BehaviorGenerationInput): {
     decisionGuide: [
       'Use segment boundaries as macro phases; split only when duration >= 10 seconds.',
       'Place burst/reposition phases on strong beatGrid values, not arbitrary decimals.',
-      'Prefer laser-ray/lane-burst when highFreqWeight is high or spectralTilt is bright.',
-      'Prefer explosive-burst/charge-strike when lowFreqWeight is high or energyDelta jumps upward.',
+      'Prefer laser-ray/lane-burst when highFreqWeight is high or spectralTilt is bright; use laser-barrage for high-intensity chorus/drop peaks.',
+      'Prefer explosive-burst/charge-strike when lowFreqWeight is high or energyDelta jumps upward; use ground-slam or charge-sweep for high-intensity low-heavy peaks.',
       'Use spectralFlux as the main signal for section transitions, sudden fills, screen-ring bursts, and snap transitions.',
       'Use spectralCentroid to distinguish bright high-frequency texture from low-frequency impact even when energy is similar.',
       'Use intensity and beatDensity to decide how many micro-phases and how much pressure a segment deserves.',
@@ -287,13 +287,13 @@ function recommendAttacks(
   if (label === 'outro') return ['sparse-ring', 'aimed-burst', 'none'];
   if (spectralFlux > 0.62 && intensity > 0.62) {
     return high > low || spectralCentroid > 0.52
-      ? ['laser-ray', 'screen-ring', 'lane-burst']
-      : ['screen-ring', 'explosive-burst', 'charge-strike'];
+      ? ['laser-barrage', 'laser-ray', 'lane-burst']
+      : ['ground-slam', 'explosive-burst', 'charge-sweep'];
   }
   if (label === 'drop' || energy > 0.78 || intensity > 0.82) {
     return low >= high
-      ? ['explosive-burst', 'charge-strike', 'screen-ring']
-      : ['laser-ray', 'lane-burst', 'explosive-burst'];
+      ? ['charge-sweep', 'ground-slam', 'explosive-burst']
+      : ['laser-barrage', 'laser-ray', 'cone-cleave'];
   }
   if (high > low + 0.12 || spectralCentroid > 0.52 || bpm >= 140) return ['laser-ray', 'lane-burst', 'aimed-burst'];
   if (low > high + 0.12) return ['charge-strike', 'explosive-burst', 'melee-sweep'];

@@ -103,6 +103,16 @@ const FEEDBACK_PRIORITY: Array<{
     }
   },
   {
+    type: 'boss-laser-blast',
+    feedback: {
+      text: '光束贯穿',
+      tone: 'warning',
+      playerFlash: 'none',
+      bossFlash: 'none',
+      screenShake: 3
+    }
+  },
+  {
     type: 'boss-sweep',
     feedback: {
       text: '近身扫击',
@@ -110,6 +120,26 @@ const FEEDBACK_PRIORITY: Array<{
       playerFlash: 'none',
       bossFlash: 'none',
       screenShake: 2
+    }
+  },
+  {
+    type: 'boss-area-blast',
+    feedback: {
+      text: '范围爆发',
+      tone: 'warning',
+      playerFlash: 'none',
+      bossFlash: 'none',
+      screenShake: 3
+    }
+  },
+  {
+    type: 'boss-area-warning',
+    feedback: {
+      text: '范围预警',
+      tone: 'warning',
+      playerFlash: 'none',
+      bossFlash: 'none',
+      screenShake: 1
     }
   },
   {
@@ -125,7 +155,7 @@ const FEEDBACK_PRIORITY: Array<{
   {
     type: 'dash-blocked-by-cooldown',
     feedback: {
-      text: '冲刺冷却中',
+      text: '闪避冷却',
       tone: 'warning',
       playerFlash: 'none',
       bossFlash: 'none',
@@ -135,9 +165,39 @@ const FEEDBACK_PRIORITY: Array<{
   {
     type: 'attack-blocked-by-cooldown',
     feedback: {
-      text: '攻击冷却中',
+      text: '攻击冷却',
       tone: 'warning',
       playerFlash: 'none',
+      bossFlash: 'none',
+      screenShake: 0
+    }
+  },
+  {
+    type: 'player-attack-beat',
+    feedback: {
+      text: '攻击同步',
+      tone: 'success',
+      playerFlash: 'none',
+      bossFlash: 'hit',
+      screenShake: 1
+    }
+  },
+  {
+    type: 'player-dash-beat',
+    feedback: {
+      text: '闪避同步',
+      tone: 'success',
+      playerFlash: 'guard',
+      bossFlash: 'none',
+      screenShake: 0
+    }
+  },
+  {
+    type: 'player-block-beat',
+    feedback: {
+      text: '防御同步',
+      tone: 'success',
+      playerFlash: 'guard',
       bossFlash: 'none',
       screenShake: 0
     }

@@ -96,6 +96,25 @@ test('emits player operation events for attack block and successful dash inputs'
   assert.equal(world.events.some((event) => event.type === 'player-dash-beat'), true);
 });
 
+test('emits concise movement action events while walking', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+
+  stepWorld(world, 0.016, {
+    moveX: 1,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'player-move'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-move-beat'), true);
+});
+
 test('keeps player attacks on cooldown even after an immediate hit', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
   const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
@@ -627,9 +646,18 @@ test('uses the active music segment module for boss movement and attack patterns
   });
 
   assert.equal(world.activeBehavior?.label, 'chorus');
-  assert.equal(['melee-sweep', 'laser-ray', 'charge-strike'].includes(world.activeBehavior?.attack ?? ''), true);
+  assert.equal([
+    'melee-sweep',
+    'laser-ray',
+    'charge-strike',
+    'ground-slam',
+    'cone-cleave',
+    'laser-barrage',
+    'charge-sweep'
+  ].includes(world.activeBehavior?.attack ?? ''), true);
   assert.equal(world.events.some((event) => (
     event.type === 'boss-sweep' || event.type === 'boss-laser' || event.type === 'boss-charged'
+    || event.type === 'boss-area-warning' || event.type === 'projectiles-fired'
   )), true);
   assert.equal(world.projectiles.length, 0);
   assert.equal(verseUsedClosePressure, true);
@@ -790,7 +818,7 @@ test('uses close pressure for drop segments and spacing movement for bridge pres
     time: 13
   });
 
-  assert.equal(world.activeBehavior?.attack, 'charge-strike');
+  assert.equal(['charge-strike', 'charge-sweep'].includes(world.activeBehavior?.attack ?? ''), true);
   assert.equal(world.events.some((event) => event.type === 'boss-charged'), true);
   assert.equal(world.projectiles.length, 0);
   assert.equal(Math.abs(world.boss.x - bridgeX) > 5 || Math.abs(world.boss.y - bridgeY) > 5, true);
@@ -845,7 +873,7 @@ test('boss pursuit spacing movement modes behave differently from orbit', () => 
     attack: false,
     block: false,
     dash: false,
-    time: 1
+    time: 1.2
   });
   stepWorld(outerOrbitWorld, 0.25, {
     moveX: 0,
@@ -902,7 +930,7 @@ test('projectile attacks spawn half of their baseline volley count', () => {
   assert.equal(world.projectiles.length, 5);
 });
 
-test('laser-ray modules fire an instant beam without spawning projectiles', () => {
+test('laser-ray modules lock a delayed beam instead of damaging instantly', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
   const world = createInitialWorld({
     width: 500,
@@ -925,6 +953,7 @@ test('laser-ray modules fire an instant beam without spawning projectiles', () =
   });
   world.player.x = world.boss.x + 120;
   world.player.y = world.boss.y;
+  const hpBefore = world.player.hp;
 
   stepWorld(world, 0.016, {
     moveX: 0,
@@ -939,7 +968,128 @@ test('laser-ray modules fire an instant beam without spawning projectiles', () =
 
   assert.equal(world.projectiles.length, 0);
   assert.equal(world.events.some((event) => event.type === 'boss-laser'), true);
+  assert.equal(world.hazards.length, 1);
+  assert.equal(Math.hypot(world.hazards[0].x - world.boss.x, world.hazards[0].y - world.boss.y) > world.boss.radius, true);
+  assert.equal(world.player.hp, hpBefore);
+
+  stepWorld(world, 0.12, {
+    moveX: 0,
+    moveY: 1,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.12
+  });
+
+  assert.equal(world.player.hp, hpBefore);
+
+  stepWorld(world, 0.16, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.28
+  });
+
+  assert.equal(world.player.hp, hpBefore);
+});
+
+test('direct boss attacks still fire when bullet count is zero', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'laser-ray',
+        bulletCount: 0,
+        bulletSpeed: 220,
+        warningIntensity: 0.7,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-laser'), true);
+  assert.equal(world.hazards.length, 1);
+});
+
+test('locked laser damages players who stay in the beam after windup', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'laser-ray',
+        bulletCount: 6,
+        bulletSpeed: 220,
+        warningIntensity: 0.7,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+  const hpBefore = world.player.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  stepWorld(world, 0.24, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.24
+  });
+
+  const eventTypes = world.events.map((event) => event.type);
+  assert.equal(eventTypes.includes('boss-laser-blast'), true);
+  assert.equal(eventTypes.includes('boss-area-blast'), false);
   assert.equal(world.player.hp < world.player.maxHp, true);
+  assert.equal(world.player.hp < hpBefore, true);
 });
 
 test('melee-sweep modules strike nearby players without spawning projectiles', () => {
@@ -1018,7 +1168,146 @@ test('explosive-burst modules spawn large slower explosive projectiles', () => {
   assert.equal(world.projectiles.length > 0, true);
   assert.equal(world.projectiles.every((projectile) => projectile.kind === 'explosion'), true);
   assert.equal(world.projectiles.every((projectile) => projectile.radius >= 14), true);
+  assert.equal(world.projectiles.every((projectile) => (
+    Math.hypot(projectile.x - world.boss.x, projectile.y - world.boss.y) > world.boss.radius + projectile.radius
+  )), true);
+  assert.equal(world.projectiles.every((projectile) => (
+    Math.hypot(projectile.x - world.boss.x, projectile.y - world.boss.y) > world.boss.radius + projectile.radius * 3.2
+  )), true);
   assert.equal(Math.hypot(world.projectiles[0].vx, world.projectiles[0].vy) < 180, true);
+});
+
+test('melee sweep remains threatening when paired with chase movement', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1.4,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'bridge',
+        movement: 'chase',
+        attack: 'melee-sweep',
+        bulletCount: 8,
+        bulletSpeed: 180,
+        warningIntensity: 0.85,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 170;
+  world.player.y = world.boss.y;
+
+  stepWorld(world, 0.25, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-sweep'), true);
+  assert.equal(world.player.hp < world.player.maxHp, true);
+});
+
+test('ground slam warns first and damages inside its fixed circle after windup', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'ground-slam',
+        bulletCount: 1,
+        bulletSpeed: 0,
+        warningIntensity: 0.8,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 20;
+  world.player.y = world.boss.y + 20;
+  const hpBefore = world.player.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-area-warning'), true);
+  assert.equal(world.player.hp, hpBefore);
+
+  stepWorld(world, 0.28, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.28
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-area-blast'), true);
+  assert.equal(world.player.hp < hpBefore, true);
+});
+
+test('combined high-pressure attacks layer two threats on the same beat', () => {
+  const rhythm = createRhythmTracker({ bpm: 150, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1.8,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'drop',
+        movement: 'shake',
+        attack: 'laser-barrage',
+        bulletCount: 10,
+        bulletSpeed: 230,
+        warningIntensity: 0.9,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.2
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-laser'), true);
+  assert.equal(world.events.some((event) => event.type === 'projectiles-fired'), true);
+  assert.equal(world.projectiles.length > 0, true);
 });
 
 test('charge-strike modules move the boss toward the player and apply contact pressure', () => {
@@ -1076,8 +1365,7 @@ test('boss projectiles do not collide with or damage the boss', () => {
       damage: 10,
       grazed: false,
       kind: 'bullet',
-      age: 0.35,
-      bossCollisionDelay: 0.25
+      age: 0.35
     }
   ];
   const hpBefore = world.boss.hp;
@@ -1095,4 +1383,41 @@ test('boss projectiles do not collide with or damage the boss', () => {
 
   assert.equal(world.projectiles.length, 1);
   assert.equal(world.boss.hp, hpBefore);
+});
+
+test('spawned projectiles carry no boss collision window', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'drop',
+        movement: 'idle',
+        attack: 'explosive-burst',
+        bulletCount: 8,
+        bulletSpeed: 200,
+        warningIntensity: 0.8,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.projectiles.length > 0, true);
+  assert.equal(world.projectiles.every((projectile) => !('bossCollisionDelay' in projectile)), true);
 });

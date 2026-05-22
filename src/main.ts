@@ -6,6 +6,7 @@ import { createProxyBehaviorProvider } from './behavior/proxy-provider.js';
 import { GameRuntime, type RuntimeBehaviorMode } from './game/runtime.js';
 import { createResultMarkup, createStatusMarkup, type StatusPhase } from './ui/status-presenter.js';
 import { runWithDisplayedError } from './ui/task.js';
+import { installUiControlSounds } from './ui/ui-sound.js';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('Missing #app container.');
@@ -137,6 +138,7 @@ const runtime = new GameRuntime(gameCanvas, {
     updateControls();
   }
 });
+installUiControlSounds(app);
 
 window.addEventListener('resize', () => runtime.resize());
 runtime.resize();

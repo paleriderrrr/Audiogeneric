@@ -20,7 +20,11 @@ export type AttackMode =
   | 'melee-sweep'
   | 'laser-ray'
   | 'explosive-burst'
-  | 'charge-strike';
+  | 'charge-strike'
+  | 'ground-slam'
+  | 'cone-cleave'
+  | 'laser-barrage'
+  | 'charge-sweep';
 export type TransitionMode = 'snap' | 'blend';
 export type PhaseRole = 'setup' | 'pressure' | 'burst' | 'reposition' | 'recovery';
 

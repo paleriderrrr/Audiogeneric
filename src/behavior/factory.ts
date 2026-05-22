@@ -233,7 +233,13 @@ function adaptModuleToSegmentFft(
   const attack = canStayPassive
     ? module.attack
     : chooseFftAttack(module.attack, segment.label, module.phaseRole, segment.energy, low, high, stability, spectralCentroid, spectralFlux, intensity, energyDelta, bpm, moduleIndex);
-  const movement = chooseFftMovement(module.movement, module.phaseRole, segment.energy, low, high, stability, spectralFlux, intensity, moduleIndex);
+  const movement = reinforceThreatMovement(
+    attack,
+    chooseFftMovement(module.movement, module.phaseRole, segment.energy, low, high, stability, spectralFlux, intensity, moduleIndex),
+    module.phaseRole,
+    segment.energy,
+    intensity
+  );
   const intensityBoost = clamp(
     segment.energy * 0.14
     + intensity * 0.12
@@ -278,6 +284,9 @@ function chooseFftAttack(
 ): BehaviorTimeline['modules'][number]['attack'] {
   if (label === 'intro' && energy < 0.32 && current !== 'none') return 'sparse-ring';
   if (phaseRole === 'setup') {
+    if (intensity >= 0.8 && energy >= 0.78 && (label === 'chorus' || label === 'drop')) {
+      return high >= low ? 'laser-barrage' : 'ground-slam';
+    }
     if (energy > 0.68 || intensity > 0.72) return high > low ? 'laser-ray' : 'charge-strike';
     return current === 'none' ? 'melee-sweep' : current;
   }
@@ -287,6 +296,15 @@ function chooseFftAttack(
     return 'melee-sweep';
   }
   if (phaseRole === 'recovery') return energy > 0.74 || intensity > 0.78 ? 'melee-sweep' : current;
+  if (intensity >= 0.8 && energy >= 0.78 && (label === 'chorus' || label === 'drop')) {
+    if (phaseRole === 'burst') {
+      return high >= low ? 'cone-cleave' : 'ground-slam';
+    }
+    return high >= low ? 'laser-barrage' : 'charge-sweep';
+  }
+  if (intensity > 0.9 && energy > 0.82) {
+    return high >= low ? 'laser-barrage' : 'charge-sweep';
+  }
   if (spectralFlux > 0.62 && intensity > 0.58) {
     return spectralCentroid > 0.55 || high > low + 0.08
       ? 'laser-ray'
@@ -314,6 +332,26 @@ function chooseFftAttack(
   if (energy > 0.78 || label === 'chorus') return moduleIndex % 2 === 0 ? 'explosive-burst' : 'laser-ray';
   if (current === 'none') return 'melee-sweep';
   return current;
+}
+
+function reinforceThreatMovement(
+  attack: BehaviorTimeline['modules'][number]['attack'],
+  movement: BehaviorTimeline['modules'][number]['movement'],
+  phaseRole: BehaviorTimeline['modules'][number]['phaseRole'],
+  energy: number,
+  intensity: number
+): BehaviorTimeline['modules'][number]['movement'] {
+  if (attack === 'melee-sweep') {
+    if (movement === 'chase' || movement === 'dash' || movement === 'shake') return movement;
+    if (energy > 0.56 || intensity > 0.62 || phaseRole === 'pressure' || phaseRole === 'burst') return 'chase';
+    return 'dash';
+  }
+
+  if (attack === 'charge-sweep' && movement !== 'shake') {
+    return 'chase';
+  }
+
+  return movement;
 }
 
 function chooseFftMovement(

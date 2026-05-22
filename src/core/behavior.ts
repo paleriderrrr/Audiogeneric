@@ -20,7 +20,11 @@ export type BossAttack =
   | 'melee-sweep'
   | 'laser-ray'
   | 'explosive-burst'
-  | 'charge-strike';
+  | 'charge-strike'
+  | 'ground-slam'
+  | 'cone-cleave'
+  | 'laser-barrage'
+  | 'charge-sweep';
 
 export interface MusicSegmentInput {
   start: number;

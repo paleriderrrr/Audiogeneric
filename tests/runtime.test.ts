@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GameRuntime } from '../src/game/runtime.js';
+import { createInitialWorld } from '../src/core/combat.js';
+import { createRhythmTracker } from '../src/core/rhythm.js';
 import type { AudioAnalysis } from '../src/audio/types.js';
 
 interface FakeRect {
@@ -8,6 +10,17 @@ interface FakeRect {
   height: number;
   left: number;
   top: number;
+}
+
+interface RecordedCanvasOperation {
+  type: 'arc' | 'lineTo' | 'moveTo' | 'fillText';
+  x?: number;
+  y?: number;
+  radius?: number;
+  startAngle?: number;
+  endAngle?: number;
+  text?: string;
+  strokeStyle: string;
 }
 
 class FakeAudioBufferSourceNode {
@@ -53,6 +66,9 @@ function createCanvas(rect: FakeRect): HTMLCanvasElement {
     clearRect() {},
     fillRect() {},
     strokeRect() {},
+    createRadialGradient() {
+      return { addColorStop() {} };
+    },
     beginPath() {},
     moveTo() {},
     lineTo() {},
@@ -81,6 +97,65 @@ function createCanvas(rect: FakeRect): HTMLCanvasElement {
   } as unknown as HTMLCanvasElement;
 }
 
+function createRecordingCanvas(rect: FakeRect): { canvas: HTMLCanvasElement; operations: RecordedCanvasOperation[] } {
+  const listeners = new Map<string, EventListener[]>();
+  const operations: RecordedCanvasOperation[] = [];
+  const state = {
+    strokeStyle: ''
+  };
+  const context = {
+    clearRect() {},
+    fillRect() {},
+    strokeRect() {},
+    createRadialGradient() {
+      return { addColorStop() {} };
+    },
+    beginPath() {},
+    closePath() {},
+    moveTo(x: number, y: number) {
+      operations.push({ type: 'moveTo', x, y, strokeStyle: state.strokeStyle });
+    },
+    lineTo(x: number, y: number) {
+      operations.push({ type: 'lineTo', x, y, strokeStyle: state.strokeStyle });
+    },
+    stroke() {},
+    arc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
+      operations.push({ type: 'arc', x, y, radius, startAngle, endAngle, strokeStyle: state.strokeStyle });
+    },
+    fill() {},
+    save() {},
+    restore() {},
+    translate() {},
+    rotate() {},
+    fillText(text: string, x: number, y: number) {
+      operations.push({ type: 'fillText', text, x, y, strokeStyle: state.strokeStyle });
+    },
+    drawImage() {},
+    set fillStyle(_: string) {},
+    set strokeStyle(value: string) {
+      state.strokeStyle = value;
+    },
+    set lineWidth(_: number) {},
+    set font(_: string) {},
+    set globalAlpha(_: number) {},
+    set shadowColor(_: string) {},
+    set shadowBlur(_: number) {},
+    set letterSpacing(_: string) {}
+  };
+
+  const canvas = {
+    width: rect.width,
+    height: rect.height,
+    getContext: () => context as unknown as CanvasRenderingContext2D,
+    getBoundingClientRect: () => rect as DOMRect,
+    addEventListener(type: string, listener: EventListener) {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    }
+  } as unknown as HTMLCanvasElement;
+
+  return { canvas, operations };
+}
+
 function createAnalysis(duration = 12): AudioAnalysis {
   return {
     buffer: {} as AudioBuffer,
@@ -97,6 +172,263 @@ function createAnalysis(duration = 12): AudioAnalysis {
     calibration: null
   };
 }
+
+test('draws melee sweep warning as a full circular area', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const { canvas, operations } = createRecordingCanvas(rect);
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(canvas, {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({
+      width: 800,
+      height: 600,
+      difficulty: 1,
+      rhythm,
+      behaviorPlan: [
+        {
+          start: 0,
+          end: 12,
+          label: 'bridge',
+          movement: 'idle',
+          attack: 'melee-sweep',
+          bulletCount: 8,
+          bulletSpeed: 170,
+          warningIntensity: 0.75,
+          fireWindowBeats: 1
+        }
+      ]
+    });
+    world.activeBehavior = world.behaviorPlan[0];
+    (runtime as unknown as { world: typeof world }).world = world;
+
+    operations.length = 0;
+    (runtime as unknown as { drawAttackTelegraph(time: number): void }).drawAttackTelegraph(0.49);
+
+    assert.equal(operations.some((operation) => (
+      operation.type === 'arc'
+      && Math.abs((operation.startAngle ?? 0) - 0) < 0.001
+      && Math.abs((operation.endAngle ?? 0) - Math.PI * 2) < 0.001
+      && operation.strokeStyle === '#ff8b8b'
+    )), true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('draws laser barrage with one real laser warning plus projectile lanes', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const { canvas, operations } = createRecordingCanvas(rect);
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(canvas, {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({
+      width: 800,
+      height: 600,
+      difficulty: 1,
+      rhythm,
+      behaviorPlan: [
+        {
+          start: 0,
+          end: 12,
+          label: 'drop',
+          movement: 'shake',
+          attack: 'laser-barrage',
+          bulletCount: 10,
+          bulletSpeed: 230,
+          warningIntensity: 0.9,
+          fireWindowBeats: 1
+        }
+      ]
+    });
+    world.activeBehavior = world.behaviorPlan[0];
+    (runtime as unknown as { world: typeof world }).world = world;
+
+    operations.length = 0;
+    (runtime as unknown as { drawAttackTelegraph(time: number): void }).drawAttackTelegraph(0.49);
+
+    const greenLaserRays = operations.filter((operation) => (
+      operation.type === 'lineTo' && operation.strokeStyle === '#8bf2cf'
+    ));
+    const redProjectileLanes = operations.filter((operation) => (
+      operation.type === 'lineTo' && operation.strokeStyle === '#ff8b8b'
+    ));
+
+    assert.equal(greenLaserRays.length, 1);
+    assert.equal(redProjectileLanes.length >= 4, true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('draws locked laser telegraph from outside the boss core', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const { canvas, operations } = createRecordingCanvas(rect);
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(canvas, {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({
+      width: 800,
+      height: 600,
+      difficulty: 1,
+      rhythm,
+      behaviorPlan: [
+        {
+          start: 0,
+          end: 12,
+          label: 'chorus',
+          movement: 'idle',
+          attack: 'laser-ray',
+          bulletCount: 6,
+          bulletSpeed: 220,
+          warningIntensity: 0.7,
+          fireWindowBeats: 1
+        }
+      ]
+    });
+    world.player.x = world.boss.x + 140;
+    world.player.y = world.boss.y;
+    world.activeBehavior = world.behaviorPlan[0];
+    (runtime as unknown as { world: typeof world }).world = world;
+
+    operations.length = 0;
+    (runtime as unknown as { drawAttackTelegraph(time: number): void }).drawAttackTelegraph(0.49);
+
+    const firstMove = operations.find((operation) => operation.type === 'moveTo' && operation.strokeStyle === '#8bf2cf');
+    assert.notEqual(firstMove, undefined);
+    assert.equal((firstMove?.x ?? 0) > world.boss.x + world.boss.radius, true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('keeps projectile spawn feedback and trails outside the boss core', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const { canvas, operations } = createRecordingCanvas(rect);
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(canvas, {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({ width: 800, height: 600, difficulty: 1, rhythm });
+    world.player.x = world.boss.x + 180;
+    world.player.y = world.boss.y;
+    world.activeBehavior = {
+      start: 0,
+      end: 12,
+      label: 'verse',
+      movement: 'idle',
+      attack: 'aimed-burst',
+      bulletCount: 6,
+      bulletSpeed: 180,
+      warningIntensity: 0.5,
+      fireWindowBeats: 1
+    };
+    world.projectiles = [
+      {
+        x: world.boss.x + 46,
+        y: world.boss.y,
+        vx: 180,
+        vy: 0,
+        radius: 6,
+        damage: 8,
+        grazed: false,
+        kind: 'bullet',
+        age: 0
+      }
+    ];
+    world.events = [{ type: 'projectiles-fired' }];
+    (runtime as unknown as { world: typeof world }).world = world;
+
+    operations.length = 0;
+    (runtime as unknown as { drawProjectiles(time: number): void }).drawProjectiles(0.2);
+    (runtime as unknown as { consumeWorldEvents(dt: number): void }).consumeWorldEvents(0.016);
+
+    const projectileTrailEnd = operations.find((operation) => operation.type === 'lineTo');
+    const sequences = (runtime as unknown as { sequences: Array<{ x: number; y: number }> }).sequences;
+
+    assert.notEqual(projectileTrailEnd, undefined);
+    assert.equal((projectileTrailEnd?.x ?? 0) > world.boss.x + world.boss.radius, true);
+    assert.equal(sequences.some((sequence) => sequence.x > world.boss.x + world.boss.radius), true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('draws the active boss attack label in the hud', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 1000, height: 700, left: 0, top: 0 };
+  const { canvas, operations } = createRecordingCanvas(rect);
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(canvas, {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({
+      width: 1000,
+      height: 700,
+      difficulty: 1,
+      rhythm,
+      behaviorPlan: [
+        {
+          start: 0,
+          end: 12,
+          label: 'chorus',
+          movement: 'shake',
+          attack: 'laser-barrage',
+          bulletCount: 10,
+          bulletSpeed: 230,
+          warningIntensity: 0.9,
+          fireWindowBeats: 1
+        }
+      ]
+    });
+    world.activeBehavior = world.behaviorPlan[0];
+    (runtime as unknown as { world: typeof world; duration: number }).world = world;
+    (runtime as unknown as { duration: number }).duration = 12;
+
+    operations.length = 0;
+    (runtime as unknown as { drawHud(time: number, energy: number): void }).drawHud(1.5, 0.82);
+
+    const texts = operations
+      .filter((operation) => operation.type === 'fillText')
+      .map((operation) => operation.text);
+
+    assert.equal(texts.includes('招式'), true);
+    assert.equal(texts.includes('光束连携'), true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
 
 test('ignores stale audio onended callbacks after a restart', async () => {
   const originalAudioContext = globalThis.AudioContext;
