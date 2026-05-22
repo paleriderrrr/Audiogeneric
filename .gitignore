@@ -1,5 +1,7 @@
 node_modules/
 dist/
 dist-test/
+output/
+.env*.local
 *.log
 *.err.log

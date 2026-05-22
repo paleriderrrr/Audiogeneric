@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/tests/*.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/tests/*.test.js",
+    "test:tool": "tsc -p tsconfig.test.json && node dist-test/tests/tooling/test-runner.js",
+    "test:verify": "npm test && npm run build",
+    "test:audio-file": "tsc -p tsconfig.test.json && node dist-test/tests/audio-file-cli.js"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

@@ -2,12 +2,35 @@ import type { MusicSegment, MusicStyle, SegmentFeature, SegmentAttackHint, Track
 
 export type SegmentLabel = MusicSegment['label'];
 export type CombatIntent = 'warmup' | 'pressure' | 'chase' | 'lockdown' | 'burst' | 'release';
-export type MovementMode = 'idle' | 'wander' | 'dash' | 'orbit' | 'shake';
-export type AttackMode = 'none' | 'sparse-ring' | 'aimed-burst' | 'screen-ring' | 'lane-burst';
+export type MovementMode =
+  | 'idle'
+  | 'wander'
+  | 'dash'
+  | 'orbit'
+  | 'shake'
+  | 'chase'
+  | 'keep-distance'
+  | 'outer-orbit';
+export type AttackMode =
+  | 'none'
+  | 'sparse-ring'
+  | 'aimed-burst'
+  | 'screen-ring'
+  | 'lane-burst'
+  | 'melee-sweep'
+  | 'laser-ray'
+  | 'explosive-burst'
+  | 'charge-strike'
+  | 'ground-slam'
+  | 'cone-cleave'
+  | 'laser-barrage'
+  | 'charge-sweep';
 export type TransitionMode = 'snap' | 'blend';
+export type PhaseRole = 'setup' | 'pressure' | 'burst' | 'reposition' | 'recovery';
 
 export interface BehaviorGenerationInput {
   bpm: number;
+  difficulty: number;
   beatGrid: number[];
   downbeat: number;
   segments: MusicSegment[];
@@ -22,10 +45,12 @@ export interface BehaviorGenerationInput {
 
 export interface BehaviorModule {
   id: string;
+  presetId: string;
   start: number;
   end: number;
   segmentLabel: SegmentLabel;
   intent: CombatIntent;
+  phaseRole: PhaseRole;
   movement: MovementMode;
   attack: AttackMode;
   bulletCount: number;

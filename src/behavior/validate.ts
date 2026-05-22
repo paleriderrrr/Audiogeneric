@@ -1,9 +1,33 @@
 import type { BehaviorModule } from './types.js';
 
-const VALID_MOVEMENTS = new Set(['idle', 'wander', 'dash', 'orbit', 'shake']);
-const VALID_ATTACKS = new Set(['none', 'sparse-ring', 'aimed-burst', 'screen-ring', 'lane-burst']);
+const VALID_MOVEMENTS = new Set([
+  'idle',
+  'wander',
+  'dash',
+  'orbit',
+  'shake',
+  'chase',
+  'keep-distance',
+  'outer-orbit'
+]);
+const VALID_ATTACKS = new Set([
+  'none',
+  'sparse-ring',
+  'aimed-burst',
+  'screen-ring',
+  'lane-burst',
+  'melee-sweep',
+  'laser-ray',
+  'explosive-burst',
+  'charge-strike',
+  'ground-slam',
+  'cone-cleave',
+  'laser-barrage',
+  'charge-sweep'
+]);
 const VALID_INTENTS = new Set(['warmup', 'pressure', 'chase', 'lockdown', 'burst', 'release']);
 const VALID_TRANSITIONS = new Set(['snap', 'blend']);
+const VALID_PHASE_ROLES = new Set(['setup', 'pressure', 'burst', 'reposition', 'recovery']);
 
 export function validateBehaviorTimeline(timeline: unknown): {
   valid: boolean;
@@ -29,10 +53,25 @@ export function validateBehaviorTimeline(timeline: unknown): {
     warnings.push(`Invalid styleApplied: ${metadata.styleApplied}`);
   }
   const modules = Array.isArray(timeline.modules) ? timeline.modules : [];
+  if (modules.length === 0) {
+    warnings.push('Timeline must contain at least one module');
+    return { valid: false, warnings };
+  }
+
+  const sorted = [...modules].sort((left, right) => {
+    const leftStart = isRecord(left) && typeof left.start === 'number' ? left.start : Number.POSITIVE_INFINITY;
+    const rightStart = isRecord(right) && typeof right.start === 'number' ? right.start : Number.POSITIVE_INFINITY;
+    return leftStart - rightStart;
+  });
+  if (!modules.every((module, index) => module === sorted[index])) {
+    warnings.push('Modules must be sorted by start time');
+  }
+
   for (const module of modules) {
     validateModule(module, warnings);
   }
-  validateTimelineOrder(modules, warnings);
+
+  validateTimelineOrder(sorted, warnings);
   return { valid: warnings.length === 0, warnings };
 }
 
@@ -41,32 +80,35 @@ function validateModule(value: unknown, warnings: string[]): void {
     warnings.push('Invalid module: expected object');
     return;
   }
+
   const module = value as Partial<BehaviorModule>;
   const id = String(module.id ?? 'unknown');
-  const movement = module.movement;
-  const attack = module.attack;
-  const intent = module.intent;
-  const transitionIn = module.transitionIn;
-  const transitionOut = module.transitionOut;
-  const start = module.start;
-  const end = module.end;
   const bulletCount = module.bulletCount;
   const bulletSpeed = module.bulletSpeed;
   const fireWindowBeats = module.fireWindowBeats;
-  const warningIntensity = module.warningIntensity;
   const pressureLevel = module.pressureLevel;
+  const warningIntensity = module.warningIntensity;
+  if (!module.id) warnings.push('Missing module id');
+  if (!module.presetId) warnings.push(`Missing preset id: ${id}`);
+  if (typeof module.movement !== 'string' || !VALID_MOVEMENTS.has(module.movement)) warnings.push(`Invalid movement: ${module.movement}`);
+  if (typeof module.attack !== 'string' || !VALID_ATTACKS.has(module.attack)) warnings.push(`Invalid attack: ${module.attack}`);
+  if (typeof module.intent !== 'string' || !VALID_INTENTS.has(module.intent)) warnings.push(`Invalid intent: ${module.intent}`);
+  if (typeof module.phaseRole !== 'string' || !VALID_PHASE_ROLES.has(module.phaseRole)) warnings.push(`Invalid phase role: ${id}`);
+  if (typeof module.transitionIn !== 'string' || !VALID_TRANSITIONS.has(module.transitionIn)) warnings.push(`Invalid transitionIn: ${id}`);
+  if (typeof module.transitionOut !== 'string' || !VALID_TRANSITIONS.has(module.transitionOut)) warnings.push(`Invalid transitionOut: ${id}`);
+  if (!Number.isFinite(module.start) || !Number.isFinite(module.end)) warnings.push(`Non-finite time range: ${id}`);
+  if (!(typeof module.start === 'number' && typeof module.end === 'number' && module.end > module.start)) warnings.push(`Invalid duration: ${id}`);
+  if (!Number.isFinite(bulletCount) || (bulletCount as number) < 0) warnings.push(`Invalid bullet count: ${id}`);
+  if (!Number.isFinite(bulletSpeed) || (bulletSpeed as number) < 0) warnings.push(`Invalid bullet speed: ${id}`);
+  if (!Number.isFinite(fireWindowBeats) || (fireWindowBeats as number) <= 0) warnings.push(`Invalid fire window: ${id}`);
+  if (!Number.isFinite(pressureLevel) || (pressureLevel as number) < 0 || (pressureLevel as number) > 100) warnings.push(`Invalid pressure level: ${id}`);
+  if (!Number.isFinite(warningIntensity) || (warningIntensity as number) < 0 || (warningIntensity as number) > 1) {
+    warnings.push(`Invalid warning intensity: ${id}`);
+  }
+}
 
-  if (typeof movement !== 'string' || !VALID_MOVEMENTS.has(movement)) warnings.push(`Invalid movement: ${movement}`);
-  if (typeof attack !== 'string' || !VALID_ATTACKS.has(attack)) warnings.push(`Invalid attack: ${attack}`);
-  if (typeof intent !== 'string' || !VALID_INTENTS.has(intent)) warnings.push(`Invalid intent: ${intent}`);
-  if (typeof transitionIn !== 'string' || !VALID_TRANSITIONS.has(transitionIn)) warnings.push(`Invalid transitionIn: ${id}`);
-  if (typeof transitionOut !== 'string' || !VALID_TRANSITIONS.has(transitionOut)) warnings.push(`Invalid transitionOut: ${id}`);
-  if (typeof start !== 'number' || typeof end !== 'number' || !(end > start)) warnings.push(`Invalid duration: ${id}`);
-  if (!Number.isFinite(bulletCount) || typeof bulletCount !== 'number' || bulletCount < 0) warnings.push(`Invalid bullet count: ${id}`);
-  if (!Number.isFinite(bulletSpeed) || typeof bulletSpeed !== 'number' || bulletSpeed <= 0) warnings.push(`Invalid bullet speed: ${id}`);
-  if (!Number.isFinite(fireWindowBeats) || typeof fireWindowBeats !== 'number' || fireWindowBeats <= 0) warnings.push(`Invalid fire window: ${id}`);
-  if (!Number.isFinite(warningIntensity) || typeof warningIntensity !== 'number' || warningIntensity < 0 || warningIntensity > 1) warnings.push(`Invalid warning intensity: ${id}`);
-  if (!Number.isFinite(pressureLevel) || typeof pressureLevel !== 'number' || pressureLevel < 0 || pressureLevel > 100) warnings.push(`Invalid pressure level: ${id}`);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function validateTimelineOrder(modules: unknown[], warnings: string[]): void {
@@ -74,11 +116,10 @@ function validateTimelineOrder(modules: unknown[], warnings: string[]): void {
     const previous = modules[index - 1] as Partial<BehaviorModule>;
     const current = modules[index] as Partial<BehaviorModule>;
     if (typeof current.start !== 'number' || typeof previous.end !== 'number') continue;
-    if (current.start < previous.end) warnings.push(`Timeline overlap: ${previous.id} -> ${current.id}`);
-    if (current.start > previous.end) warnings.push(`Timeline gap: ${previous.id} -> ${current.id}`);
+    if (current.start < previous.end) {
+      warnings.push(`Overlapping modules: ${previous.id} -> ${current.id}`);
+    } else if (current.start - previous.end > 0.001) {
+      warnings.push(`Gap between modules: ${previous.id} -> ${current.id}`);
+    }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

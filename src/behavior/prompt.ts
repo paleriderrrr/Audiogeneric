@@ -1,7 +1,30 @@
 import type { BehaviorGenerationInput, BehaviorPromptInput, BehaviorPromptSegment } from './types.js';
 
-const AVAILABLE_MOVES: BehaviorPromptInput['availableMoves'] = ['idle', 'wander', 'dash', 'orbit', 'shake'];
-const AVAILABLE_ATTACKS: BehaviorPromptInput['availableAttacks'] = ['none', 'sparse-ring', 'aimed-burst', 'screen-ring', 'lane-burst'];
+const AVAILABLE_MOVES: BehaviorPromptInput['availableMoves'] = [
+  'idle',
+  'wander',
+  'dash',
+  'orbit',
+  'shake',
+  'chase',
+  'keep-distance',
+  'outer-orbit'
+];
+const AVAILABLE_ATTACKS: BehaviorPromptInput['availableAttacks'] = [
+  'none',
+  'sparse-ring',
+  'aimed-burst',
+  'screen-ring',
+  'lane-burst',
+  'melee-sweep',
+  'laser-ray',
+  'explosive-burst',
+  'charge-strike',
+  'ground-slam',
+  'cone-cleave',
+  'laser-barrage',
+  'charge-sweep'
+];
 
 export function buildBehaviorPromptInput(input: BehaviorGenerationInput): BehaviorPromptInput {
   const duration = input.segments[input.segments.length - 1]?.end ?? 0;
@@ -42,10 +65,12 @@ export function buildBehaviorPromptInput(input: BehaviorGenerationInput): Behavi
       requiredTopLevelFields: ['source', 'modules', 'generatedAt', 'metadata'],
       requiredModuleFields: [
         'id',
+        'presetId',
         'start',
         'end',
         'segmentLabel',
         'intent',
+        'phaseRole',
         'movement',
         'attack',
         'bulletCount',

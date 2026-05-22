@@ -1,3 +1,11 @@
+export interface DecodedAudioBuffer {
+  length: number;
+  duration: number;
+  sampleRate: number;
+  numberOfChannels: number;
+  getChannelData(channel: number): Float32Array;
+}
+
 export interface BeatPoint {
   time: number;
   strength: number;
@@ -8,6 +16,13 @@ export interface MusicSegment {
   end: number;
   label: 'intro' | 'verse' | 'chorus' | 'bridge' | 'drop' | 'outro';
   energy: number;
+  lowFreqWeight?: number;
+  highFreqWeight?: number;
+  stability?: number;
+  spectralCentroid?: number;
+  spectralFlux?: number;
+  beatDensity?: number;
+  intensity?: number;
 }
 
 export type MusicStyle = 'rock' | 'electronic' | 'hiphop' | 'ambient' | 'pop' | 'orchestral' | 'unknown';
@@ -57,8 +72,8 @@ export interface CalibrationResult {
   confirmed: boolean;
 }
 
-export interface AudioAnalysis {
-  buffer: AudioBuffer;
+export interface AudioAnalysis<TBuffer extends DecodedAudioBuffer = AudioBuffer> {
+  buffer: TBuffer;
   bpm: number;
   firstBeat: number;
   duration: number;

@@ -40,7 +40,238 @@ test('moves the player within the arena and applies dash cooldown explicitly', (
   assert.equal(world.events.some((event) => event.type === 'dash-blocked-by-cooldown'), true);
 });
 
-test('scores rhythm-boosted melee hits and ends in victory when the boss falls', () => {
+test('commits dodge travel even without movement input by using facing direction', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  const startX = world.player.x;
+  const startY = world.player.y;
+  world.player.facing = 0;
+
+  stepWorld(world, 0.05, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: true,
+    time: 1
+  });
+
+  stepWorld(world, 0.05, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.05
+  });
+
+  assert.equal(world.player.x - startX >= 70, true);
+  assert.equal(Math.abs(world.player.y - startY) < 6, true);
+});
+
+test('emits player operation events for attack block and successful dash inputs', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: true,
+    block: true,
+    dash: true,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'player-attack'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-block'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-dash'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-attack-beat'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-block-beat'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-dash-beat'), true);
+});
+
+test('emits concise movement action events while walking', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+
+  stepWorld(world, 0.016, {
+    moveX: 1,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'player-move'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-move-beat'), true);
+});
+
+test('keeps player attacks on cooldown even after an immediate hit', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.x = 250;
+  world.player.y = 250;
+  world.player.facing = -Math.PI / 2;
+  world.boss.x = 250;
+  world.boss.y = 180;
+  const hpBefore = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.boss.x,
+    pointerY: world.boss.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'attack-hit'), true);
+  assert.equal(world.player.attackCooldown > 0, true);
+  const hpAfterFirstHit = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.boss.x,
+    pointerY: world.boss.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1.016
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'attack-blocked-by-cooldown'), true);
+  assert.equal(world.boss.hp, hpAfterFirstHit);
+  assert.equal(hpAfterFirstHit < hpBefore, true);
+});
+
+test('extends invulnerability when a dodge lands on beat', () => {
+  const rhythmA = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const rhythmB = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const perfectWorld = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm: rhythmA });
+  const missWorld = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm: rhythmB });
+  perfectWorld.player.facing = 0;
+  missWorld.player.facing = 0;
+
+  stepWorld(perfectWorld, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: perfectWorld.player.x + 100,
+    pointerY: perfectWorld.player.y,
+    attack: false,
+    block: false,
+    dash: true,
+    time: 1
+  });
+
+  stepWorld(missWorld, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: missWorld.player.x + 100,
+    pointerY: missWorld.player.y,
+    attack: false,
+    block: false,
+    dash: true,
+    time: 1.18
+  });
+
+  assert.equal(perfectWorld.player.invulnerableTime > missWorld.player.invulnerableTime, true);
+});
+
+test('clears bullets along the dodge path when the dodge lands on beat', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.facing = 0;
+  world.projectiles = [
+    {
+      x: world.player.x + 40,
+      y: world.player.y + 24,
+      vx: 0,
+      vy: 0,
+      radius: 6,
+      damage: 10,
+      grazed: false
+    }
+  ];
+
+  stepWorld(world, 0.05, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: true,
+    time: 1
+  });
+
+  stepWorld(world, 0.05, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.05
+  });
+
+  assert.equal(world.projectiles.length, 0);
+});
+
+test('does not clear nearby bullets when the dodge misses the beat window', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.facing = 0;
+  world.projectiles = [
+    {
+      x: world.player.x + 40,
+      y: world.player.y + 24,
+      vx: 0,
+      vy: 0,
+      radius: 6,
+      damage: 10,
+      grazed: false
+    }
+  ];
+
+  stepWorld(world, 0.05, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: true,
+    time: 1.18
+  });
+
+  stepWorld(world, 0.05, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.23
+  });
+
+  assert.equal(world.projectiles.length, 1);
+});
+
+test('resets boss health instead of ending the song early when the boss falls', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
   const world = createInitialWorld({ width: 400, height: 300, difficulty: 1, rhythm });
   world.player.x = world.boss.x - 40;
@@ -58,15 +289,191 @@ test('scores rhythm-boosted melee hits and ends in victory when the boss falls',
     time: 1
   });
 
-  assert.equal(world.boss.hp <= 0, true);
-  assert.equal(world.result, 'victory');
+  assert.equal(world.boss.hp, world.boss.maxHp);
+  assert.equal(world.result, 'playing');
+  assert.equal(world.events.some((event) => event.type === 'boss-break'), true);
   assert.equal(world.score >= 150, true);
   assert.equal(world.damageDealt >= 50, true);
 });
 
+test('hits the boss when it is inside the forward slash cone', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.x = 220;
+  world.player.y = 220;
+  world.player.facing = 0;
+  world.boss.x = world.player.x + 72;
+  world.boss.y = world.player.y + 4;
+  const hpBefore = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.boss.hp < hpBefore, true);
+  assert.equal(world.events.some((event) => event.type === 'attack-hit'), true);
+  assert.equal(world.events.some((event) => event.type === 'player-attack-beat'), true);
+});
+
+test('misses the boss when it is close but outside the slash cone angle', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.x = 220;
+  world.player.y = 220;
+  world.player.facing = 0;
+  world.boss.x = world.player.x - 24;
+  world.boss.y = world.player.y;
+  const hpBefore = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 100,
+    pointerY: world.player.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.boss.hp, hpBefore);
+  assert.equal(world.events.some((event) => event.type === 'attack-hit'), false);
+});
+
+test('misses the boss when it is outside the slash radius even if aimed correctly', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.x = 220;
+  world.player.y = 220;
+  world.player.facing = 0;
+  world.boss.x = world.player.x + 132;
+  world.boss.y = world.player.y;
+  const hpBefore = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 150,
+    pointerY: world.player.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.boss.hp, hpBefore);
+});
+
+test('keeps lock attack aim stable during the active attack window', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.player.x = 220;
+  world.player.y = 220;
+  world.boss.x = world.player.x + 130;
+  world.boss.y = world.player.y;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x + 150,
+    pointerY: world.player.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'attack-hit'), false);
+  world.boss.x = world.player.x + 108;
+  const hpBefore = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x - 120,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.016
+  });
+
+  assert.equal(world.boss.hp < hpBefore, true);
+  assert.equal(world.events.some((event) => event.type === 'attack-hit'), true);
+});
+
+test('keeps slash reach stable while beat timing only changes damage output', () => {
+  const rhythmA = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const rhythmB = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const perfectWorld = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm: rhythmA });
+  const missWorld = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm: rhythmB });
+
+  for (const world of [perfectWorld, missWorld]) {
+    world.player.x = 220;
+    world.player.y = 220;
+    world.player.facing = 0;
+    world.boss.x = world.player.x + 72;
+    world.boss.y = world.player.y;
+  }
+
+  const perfectHpBefore = perfectWorld.boss.hp;
+  const missHpBefore = missWorld.boss.hp;
+
+  stepWorld(perfectWorld, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: perfectWorld.player.x + 100,
+    pointerY: perfectWorld.player.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  stepWorld(missWorld, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: missWorld.player.x + 100,
+    pointerY: missWorld.player.y,
+    attack: true,
+    block: false,
+    dash: false,
+    time: 1.18
+  });
+
+  assert.equal(perfectWorld.boss.hp < perfectHpBefore, true);
+  assert.equal(missWorld.boss.hp < missHpBefore, true);
+  assert.equal((perfectHpBefore - perfectWorld.boss.hp) > (missHpBefore - missWorld.boss.hp), true);
+});
+
 test('spawns beat-driven bullets and damages the player on collision', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
-  const world = createInitialWorld({ width: 400, height: 300, difficulty: 1, rhythm });
+  const world = createInitialWorld({
+    width: 400,
+    height: 300,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'verse',
+        movement: 'idle',
+        attack: 'sparse-ring',
+        bulletCount: 6,
+        bulletSpeed: 160,
+        warningIntensity: 0.35,
+        fireWindowBeats: 1
+      }
+    ]
+  });
   world.player.x = world.boss.x;
   world.player.y = world.boss.y + 20;
 
@@ -103,7 +510,107 @@ test('spawns beat-driven bullets and damages the player on collision', () => {
   assert.equal(world.events.some((event) => event.type === 'player-hit'), true);
 });
 
-test('uses the active music segment module for boss movement and bullet patterns', () => {
+test('spawns boss attacks on the detected beat grid instead of the derived metronome only', () => {
+  const rhythm = createRhythmTracker({
+    bpm: 120,
+    firstBeat: 0,
+    duration: 20,
+    beatGrid: [0.18, 0.69, 1.17, 1.68]
+  });
+  const world = createInitialWorld({
+    width: 400,
+    height: 300,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'verse',
+        movement: 'idle',
+        attack: 'sparse-ring',
+        bulletCount: 6,
+        bulletSpeed: 160,
+        warningIntensity: 0.35,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+  assert.equal(world.projectiles.length, 0);
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.17
+  });
+
+  assert.equal(world.projectiles.length > 0, true);
+  assert.equal(world.events.some((event) => event.type === 'projectiles-fired'), true);
+});
+
+
+test('rewards near misses once without damaging the player', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 400, height: 300, difficulty: 1, rhythm });
+  world.projectiles = [
+    {
+      x: world.player.x + world.player.radius + 14,
+      y: world.player.y,
+      vx: 0,
+      vy: 0,
+      radius: 6,
+      damage: 10,
+      grazed: false
+    }
+  ];
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.boss.x,
+    pointerY: world.boss.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.player.hp, world.player.maxHp);
+  assert.equal(world.score, 15);
+  assert.equal(world.projectiles[0].grazed, true);
+  assert.equal(world.events.some((event) => event.type === 'near-graze'), true);
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.boss.x,
+    pointerY: world.boss.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.016
+  });
+
+  assert.equal(world.score, 15);
+});
+
+test('uses the active music segment module for boss movement and attack patterns', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 30 });
   const behaviorPlan = createBehaviorPlan([
     { start: 0, end: 10, label: 'verse', energy: 0.25 },
@@ -121,12 +628,13 @@ test('uses the active music segment module for boss movement and bullet patterns
     dash: false,
     time: 1
   });
-  const verseCount = world.projectiles.length;
+  const verseUsedClosePressure = world.events.some((event) => event.type === 'boss-sweep');
   const verseX = world.boss.x;
+  const verseY = world.boss.y;
 
   world.projectiles = [];
   world.boss.lastBeatSpawnAt = -Infinity;
-  stepWorld(world, 0.016, {
+  stepWorld(world, 0.1, {
     moveX: 0,
     moveY: 0,
     pointerX: 0,
@@ -138,8 +646,22 @@ test('uses the active music segment module for boss movement and bullet patterns
   });
 
   assert.equal(world.activeBehavior?.label, 'chorus');
-  assert.equal(world.projectiles.length > verseCount, true);
-  assert.equal(Math.abs(world.boss.x - verseX) > 10, true);
+  assert.equal([
+    'melee-sweep',
+    'laser-ray',
+    'charge-strike',
+    'ground-slam',
+    'cone-cleave',
+    'laser-barrage',
+    'charge-sweep'
+  ].includes(world.activeBehavior?.attack ?? ''), true);
+  assert.equal(world.events.some((event) => (
+    event.type === 'boss-sweep' || event.type === 'boss-laser' || event.type === 'boss-charged'
+    || event.type === 'boss-area-warning' || event.type === 'projectiles-fired'
+  )), true);
+  assert.equal(world.projectiles.length, 0);
+  assert.equal(verseUsedClosePressure, true);
+  assert.equal(Math.abs(world.boss.x - verseX) > 1 || Math.abs(world.boss.y - verseY) > 1, true);
 });
 
 test('perfect defense empowers the next melee hit only once', () => {
@@ -177,65 +699,261 @@ test('perfect defense empowers the next melee hit only once', () => {
   assert.equal(world.player.nextAttackMultiplier, 1);
 });
 
-test('keeps the full player body inside the arena', () => {
+test('keeps low-pressure sections readable while still allowing a minimum attack pattern', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
-  const world = createInitialWorld({ width: 400, height: 300, difficulty: 1, rhythm });
+  const behaviorPlan = createBehaviorPlan([{ start: 0, end: 12, label: 'intro', energy: 0.05 }], 120, 0.3);
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 0.3, rhythm, behaviorPlan });
 
-  stepWorld(world, 1, {
-    moveX: -1,
-    moveY: -1,
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
     pointerX: 0,
     pointerY: 0,
     attack: false,
     block: false,
     dash: false,
-    time: 0.3
+    time: 1
   });
 
-  assert.equal(world.player.x >= world.arena.minX + world.player.radius, true);
-  assert.equal(world.player.y >= world.arena.minY + world.player.radius, true);
+  assert.equal(world.activeBehavior?.attack, 'sparse-ring');
+  assert.equal(world.projectiles.length > 0, true);
+  assert.equal((world.activeBehavior?.bulletCount ?? 0) <= 4, true);
 });
 
-test('requires melee attacks to face the boss', () => {
+test('uses fireWindowBeats to keep low-pressure sections from firing every beat', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
-  const world = createInitialWorld({ width: 400, height: 300, difficulty: 1, rhythm });
-  world.player.x = world.boss.x - 40;
-  world.player.y = world.boss.y;
-  const hpBefore = world.boss.hp;
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'verse',
+        movement: 'wander',
+        attack: 'sparse-ring',
+        bulletCount: 4,
+        bulletSpeed: 150,
+        warningIntensity: 0.25,
+        fireWindowBeats: 4
+      }
+    ]
+  });
 
   stepWorld(world, 0.016, {
     moveX: 0,
     moveY: 0,
-    pointerX: world.player.x - 100,
-    pointerY: world.player.y,
-    attack: true,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+  const firstVolleyCount = world.projectiles.length;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.5
+  });
+
+  assert.equal(firstVolleyCount > 0, true);
+  assert.equal(world.projectiles.length, firstVolleyCount);
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 3
+  });
+
+  assert.equal(world.projectiles.length > firstVolleyCount, true);
+});
+
+test('uses close pressure for drop segments and spacing movement for bridge pressure', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 30 });
+  const behaviorPlan = createBehaviorPlan([
+    { start: 0, end: 12, label: 'bridge', energy: 0.55 },
+    { start: 12, end: 24, label: 'drop', energy: 0.98 }
+  ], 120, 1.8);
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1.8, rhythm, behaviorPlan });
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 150,
+    pointerY: 120,
+    attack: false,
     block: false,
     dash: false,
     time: 1
   });
 
-  assert.equal(world.boss.hp, hpBefore);
+  const bridgeX = world.boss.x;
+  const bridgeY = world.boss.y;
+  assert.equal(world.activeBehavior?.movement, 'keep-distance');
+
+  world.projectiles = [];
+  world.boss.lastBeatSpawnAt = -Infinity;
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 320,
+    pointerY: 260,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 13
+  });
+
+  assert.equal(['charge-strike', 'charge-sweep'].includes(world.activeBehavior?.attack ?? ''), true);
+  assert.equal(world.events.some((event) => event.type === 'boss-charged'), true);
+  assert.equal(world.projectiles.length, 0);
+  assert.equal(Math.abs(world.boss.x - bridgeX) > 5 || Math.abs(world.boss.y - bridgeY) > 5, true);
 });
 
-test('does not fire or report projectiles for none attacks', () => {
+test('boss pursuit spacing movement modes behave differently from orbit', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const baseModule = {
+    start: 0,
+    end: 20,
+    label: 'bridge' as const,
+    attack: 'none' as const,
+    bulletCount: 0,
+    bulletSpeed: 0,
+    warningIntensity: 0.5
+  };
+  const makeWorld = (movement: 'chase' | 'keep-distance' | 'outer-orbit') => {
+    const world = createInitialWorld({
+      width: 500,
+      height: 400,
+      difficulty: 1,
+      rhythm: createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 }),
+      behaviorPlan: [{ ...baseModule, movement }]
+    });
+    world.player.x = 380;
+    world.player.y = 200;
+    world.boss.x = 180;
+    world.boss.y = 200;
+    return world;
+  };
+  const chaseWorld = makeWorld('chase');
+  const keepDistanceWorld = makeWorld('keep-distance');
+  const outerOrbitWorld = makeWorld('outer-orbit');
+  const chaseDistanceBefore = Math.hypot(chaseWorld.player.x - chaseWorld.boss.x, chaseWorld.player.y - chaseWorld.boss.y);
+  const keepDistanceBefore = Math.hypot(keepDistanceWorld.player.x - keepDistanceWorld.boss.x, keepDistanceWorld.player.y - keepDistanceWorld.boss.y);
+
+  stepWorld(chaseWorld, 0.25, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+  stepWorld(keepDistanceWorld, 0.25, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.2
+  });
+  stepWorld(outerOrbitWorld, 0.25, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  const chaseDistanceAfter = Math.hypot(chaseWorld.player.x - chaseWorld.boss.x, chaseWorld.player.y - chaseWorld.boss.y);
+  const keepDistanceAfter = Math.hypot(keepDistanceWorld.player.x - keepDistanceWorld.boss.x, keepDistanceWorld.player.y - keepDistanceWorld.boss.y);
+
+  assert.equal(chaseDistanceAfter < chaseDistanceBefore, true);
+  assert.equal(keepDistanceAfter < keepDistanceBefore && keepDistanceAfter > 95, true);
+  assert.equal(Math.hypot(outerOrbitWorld.boss.x - outerOrbitWorld.boss.homeX, outerOrbitWorld.boss.y - outerOrbitWorld.boss.homeY) > 110, true);
+});
+
+test('projectile attacks spawn half of their baseline volley count', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
   const world = createInitialWorld({
-    width: 400,
-    height: 300,
+    width: 500,
+    height: 400,
     difficulty: 1,
     rhythm,
-    behaviorPlan: [{
-      start: 0,
-      end: 20,
-      label: 'intro',
-      movement: 'idle',
-      attack: 'none',
-      bulletCount: 8,
-      bulletSpeed: 140,
-      fireWindowBeats: 1,
-      warningIntensity: 0.1
-    }]
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'verse',
+        movement: 'idle',
+        attack: 'sparse-ring',
+        bulletCount: 10,
+        bulletSpeed: 180,
+        warningIntensity: 0.4,
+        fireWindowBeats: 1
+      }
+    ]
   });
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.projectiles.length, 5);
+});
+
+test('laser-ray modules lock a delayed beam instead of damaging instantly', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'laser-ray',
+        bulletCount: 6,
+        bulletSpeed: 220,
+        warningIntensity: 0.7,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+  const hpBefore = world.player.hp;
 
   stepWorld(world, 0.016, {
     moveX: 0,
@@ -249,30 +967,25 @@ test('does not fire or report projectiles for none attacks', () => {
   });
 
   assert.equal(world.projectiles.length, 0);
-  assert.equal(world.events.some((event) => event.type === 'projectiles-fired'), false);
-});
+  assert.equal(world.events.some((event) => event.type === 'boss-laser'), true);
+  assert.equal(world.hazards.length, 1);
+  assert.equal(Math.hypot(world.hazards[0].x - world.boss.x, world.hazards[0].y - world.boss.y) > world.boss.radius, true);
+  assert.equal(world.player.hp, hpBefore);
 
-test('respects fire windows when spawning beat projectiles', () => {
-  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
-  const world = createInitialWorld({
-    width: 400,
-    height: 300,
-    difficulty: 1,
-    rhythm,
-    behaviorPlan: [{
-      start: 0,
-      end: 20,
-      label: 'verse',
-      movement: 'wander',
-      attack: 'sparse-ring',
-      bulletCount: 4,
-      bulletSpeed: 140,
-      fireWindowBeats: 4,
-      warningIntensity: 0.3
-    }]
+  stepWorld(world, 0.12, {
+    moveX: 0,
+    moveY: 1,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.12
   });
 
-  stepWorld(world, 0.016, {
+  assert.equal(world.player.hp, hpBefore);
+
+  stepWorld(world, 0.16, {
     moveX: 0,
     moveY: 0,
     pointerX: 0,
@@ -280,42 +993,165 @@ test('respects fire windows when spawning beat projectiles', () => {
     attack: false,
     block: false,
     dash: false,
-    time: 1
-  });
-  const firstCount = world.projectiles.length;
-
-  stepWorld(world, 0.016, {
-    moveX: 0,
-    moveY: 0,
-    pointerX: 0,
-    pointerY: 0,
-    attack: false,
-    block: false,
-    dash: false,
-    time: 1.5
+    time: 1.28
   });
 
-  assert.equal(world.projectiles.length, firstCount);
+  assert.equal(world.player.hp, hpBefore);
 });
 
-test('implements orbit and lane-burst behavior distinctly', () => {
+test('direct boss attacks still fire when bullet count is zero', () => {
   const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
   const world = createInitialWorld({
     width: 500,
     height: 400,
     difficulty: 1,
     rhythm,
-    behaviorPlan: [{
-      start: 0,
-      end: 20,
-      label: 'bridge',
-      movement: 'orbit',
-      attack: 'lane-burst',
-      bulletCount: 6,
-      bulletSpeed: 160,
-      fireWindowBeats: 1,
-      warningIntensity: 0.5
-    }]
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'laser-ray',
+        bulletCount: 0,
+        bulletSpeed: 220,
+        warningIntensity: 0.7,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-laser'), true);
+  assert.equal(world.hazards.length, 1);
+});
+
+test('locked laser damages players who stay in the beam after windup', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'laser-ray',
+        bulletCount: 6,
+        bulletSpeed: 220,
+        warningIntensity: 0.7,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+  const hpBefore = world.player.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  stepWorld(world, 0.24, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.24
+  });
+
+  const eventTypes = world.events.map((event) => event.type);
+  assert.equal(eventTypes.includes('boss-laser-blast'), true);
+  assert.equal(eventTypes.includes('boss-area-blast'), false);
+  assert.equal(world.player.hp < world.player.maxHp, true);
+  assert.equal(world.player.hp < hpBefore, true);
+});
+
+test('melee-sweep modules strike nearby players without spawning projectiles', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'bridge',
+        movement: 'idle',
+        attack: 'melee-sweep',
+        bulletCount: 8,
+        bulletSpeed: 170,
+        warningIntensity: 0.75,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 58;
+  world.player.y = world.boss.y;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.projectiles.length, 0);
+  assert.equal(world.events.some((event) => event.type === 'boss-sweep'), true);
+  assert.equal(world.player.hp < world.player.maxHp, true);
+});
+
+test('explosive-burst modules spawn large slower explosive projectiles', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'drop',
+        movement: 'idle',
+        attack: 'explosive-burst',
+        bulletCount: 8,
+        bulletSpeed: 200,
+        warningIntensity: 0.8,
+        fireWindowBeats: 1
+      }
+    ]
   });
 
   stepWorld(world, 0.016, {
@@ -329,40 +1165,259 @@ test('implements orbit and lane-burst behavior distinctly', () => {
     time: 1
   });
 
-  assert.equal(Math.abs(world.boss.x - world.boss.homeX) > 20, true);
-  assert.equal(new Set(world.projectiles.map((projectile) => Math.round(projectile.vy))).size <= 2, true);
+  assert.equal(world.projectiles.length > 0, true);
+  assert.equal(world.projectiles.every((projectile) => projectile.kind === 'explosion'), true);
+  assert.equal(world.projectiles.every((projectile) => projectile.radius >= 14), true);
+  assert.equal(world.projectiles.every((projectile) => (
+    Math.hypot(projectile.x - world.boss.x, projectile.y - world.boss.y) > world.boss.radius + projectile.radius
+  )), true);
+  assert.equal(world.projectiles.every((projectile) => (
+    Math.hypot(projectile.x - world.boss.x, projectile.y - world.boss.y) > world.boss.radius + projectile.radius * 3.2
+  )), true);
+  assert.equal(Math.hypot(world.projectiles[0].vx, world.projectiles[0].vy) < 180, true);
 });
 
-test('scales projectile pressure by difficulty', () => {
-  const easyRhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
-  const hardRhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
-  const behaviorPlan = [{
-    start: 0,
-    end: 20,
-    label: 'chorus' as const,
-    movement: 'dash' as const,
-    attack: 'screen-ring' as const,
-    bulletCount: 8,
-    bulletSpeed: 160,
-    fireWindowBeats: 1,
-    warningIntensity: 0.7
-  }];
-  const easy = createInitialWorld({ width: 400, height: 300, difficulty: 0.5, rhythm: easyRhythm, behaviorPlan });
-  const hard = createInitialWorld({ width: 400, height: 300, difficulty: 1.5, rhythm: hardRhythm, behaviorPlan });
+test('melee sweep remains threatening when paired with chase movement', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1.4,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'bridge',
+        movement: 'chase',
+        attack: 'melee-sweep',
+        bulletCount: 8,
+        bulletSpeed: 180,
+        warningIntensity: 0.85,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 170;
+  world.player.y = world.boss.y;
 
-  for (const world of [easy, hard]) {
-    stepWorld(world, 0.016, {
-      moveX: 0,
-      moveY: 0,
-      pointerX: 0,
-      pointerY: 0,
-      attack: false,
-      block: false,
-      dash: false,
-      time: 1
-    });
-  }
+  stepWorld(world, 0.25, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
 
-  assert.equal(hard.projectiles.length > easy.projectiles.length, true);
-  assert.equal(Math.hypot(hard.projectiles[0].vx, hard.projectiles[0].vy) > Math.hypot(easy.projectiles[0].vx, easy.projectiles[0].vy), true);
+  assert.equal(world.events.some((event) => event.type === 'boss-sweep'), true);
+  assert.equal(world.player.hp < world.player.maxHp, true);
+});
+
+test('ground slam warns first and damages inside its fixed circle after windup', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'chorus',
+        movement: 'idle',
+        attack: 'ground-slam',
+        bulletCount: 1,
+        bulletSpeed: 0,
+        warningIntensity: 0.8,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 20;
+  world.player.y = world.boss.y + 20;
+  const hpBefore = world.player.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-area-warning'), true);
+  assert.equal(world.player.hp, hpBefore);
+
+  stepWorld(world, 0.28, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.28
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-area-blast'), true);
+  assert.equal(world.player.hp < hpBefore, true);
+});
+
+test('combined high-pressure attacks layer two threats on the same beat', () => {
+  const rhythm = createRhythmTracker({ bpm: 150, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1.8,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'drop',
+        movement: 'shake',
+        attack: 'laser-barrage',
+        bulletCount: 10,
+        bulletSpeed: 230,
+        warningIntensity: 0.9,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 120;
+  world.player.y = world.boss.y;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1.2
+  });
+
+  assert.equal(world.events.some((event) => event.type === 'boss-laser'), true);
+  assert.equal(world.events.some((event) => event.type === 'projectiles-fired'), true);
+  assert.equal(world.projectiles.length > 0, true);
+});
+
+test('charge-strike modules move the boss toward the player and apply contact pressure', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'drop',
+        movement: 'idle',
+        attack: 'charge-strike',
+        bulletCount: 1,
+        bulletSpeed: 220,
+        warningIntensity: 0.85,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+  world.player.x = world.boss.x + 90;
+  world.player.y = world.boss.y;
+  const distanceBefore = Math.hypot(world.player.x - world.boss.x, world.player.y - world.boss.y);
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.player.x,
+    pointerY: world.player.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  const distanceAfter = Math.hypot(world.player.x - world.boss.x, world.player.y - world.boss.y);
+  assert.equal(distanceAfter < distanceBefore, true);
+  assert.equal(world.events.some((event) => event.type === 'boss-charged'), true);
+  assert.equal(world.player.hp < world.player.maxHp, true);
+});
+
+test('boss projectiles do not collide with or damage the boss', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({ width: 500, height: 400, difficulty: 1, rhythm });
+  world.projectiles = [
+    {
+      x: world.boss.x + 4,
+      y: world.boss.y,
+      vx: 0,
+      vy: 0,
+      radius: 6,
+      damage: 10,
+      grazed: false,
+      kind: 'bullet',
+      age: 0.35
+    }
+  ];
+  const hpBefore = world.boss.hp;
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: world.boss.x,
+    pointerY: world.boss.y,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.projectiles.length, 1);
+  assert.equal(world.boss.hp, hpBefore);
+});
+
+test('spawned projectiles carry no boss collision window', () => {
+  const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 20 });
+  const world = createInitialWorld({
+    width: 500,
+    height: 400,
+    difficulty: 1,
+    rhythm,
+    behaviorPlan: [
+      {
+        start: 0,
+        end: 20,
+        label: 'drop',
+        movement: 'idle',
+        attack: 'explosive-burst',
+        bulletCount: 8,
+        bulletSpeed: 200,
+        warningIntensity: 0.8,
+        fireWindowBeats: 1
+      }
+    ]
+  });
+
+  stepWorld(world, 0.016, {
+    moveX: 0,
+    moveY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    attack: false,
+    block: false,
+    dash: false,
+    time: 1
+  });
+
+  assert.equal(world.projectiles.length > 0, true);
+  assert.equal(world.projectiles.every((projectile) => !('bossCollisionDelay' in projectile)), true);
 });
