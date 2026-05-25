@@ -322,6 +322,54 @@ test('draws locked laser telegraph from outside the boss core', () => {
   }
 });
 
+test('draws projectile telegraphs from outside the boss core', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const { canvas, operations } = createRecordingCanvas(rect);
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(canvas, {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({
+      width: 800,
+      height: 600,
+      difficulty: 1,
+      rhythm,
+      behaviorPlan: [
+        {
+          start: 0,
+          end: 12,
+          label: 'verse',
+          movement: 'idle',
+          attack: 'aimed-burst',
+          bulletCount: 8,
+          bulletSpeed: 180,
+          warningIntensity: 0.5,
+          fireWindowBeats: 1
+        }
+      ]
+    });
+    world.player.x = world.boss.x + 140;
+    world.player.y = world.boss.y;
+    world.activeBehavior = world.behaviorPlan[0];
+    (runtime as unknown as { world: typeof world }).world = world;
+
+    operations.length = 0;
+    (runtime as unknown as { drawAttackTelegraph(time: number): void }).drawAttackTelegraph(0.49);
+
+    const firstMove = operations.find((operation) => operation.type === 'moveTo' && operation.strokeStyle === '#ff8b8b');
+    assert.notEqual(firstMove, undefined);
+    assert.equal((firstMove?.x ?? 0) > world.boss.x + world.boss.radius, true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test('keeps projectile spawn feedback and trails outside the boss core', () => {
   const originalWindow = globalThis.window;
   const rect = { width: 800, height: 600, left: 0, top: 0 };
@@ -375,6 +423,70 @@ test('keeps projectile spawn feedback and trails outside the boss core', () => {
     assert.notEqual(projectileTrailEnd, undefined);
     assert.equal((projectileTrailEnd?.x ?? 0) > world.boss.x + world.boss.radius, true);
     assert.equal(sequences.some((sequence) => sequence.x > world.boss.x + world.boss.radius), true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('renders the boss core beneath telegraphs and projectile visuals', () => {
+  const originalWindow = globalThis.window;
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+
+  try {
+    const runtime = new GameRuntime(createCanvas(rect), {
+      onStatus() {},
+      onResult() {}
+    });
+    const rhythm = createRhythmTracker({ bpm: 120, firstBeat: 0, duration: 12 });
+    const world = createInitialWorld({
+      width: 800,
+      height: 600,
+      difficulty: 1,
+      rhythm,
+      behaviorPlan: [
+        {
+          start: 0,
+          end: 12,
+          label: 'chorus',
+          movement: 'idle',
+          attack: 'laser-ray',
+          bulletCount: 6,
+          bulletSpeed: 220,
+          warningIntensity: 0.7,
+          fireWindowBeats: 1
+        }
+      ]
+    });
+    world.activeBehavior = world.behaviorPlan[0];
+    (runtime as unknown as { world: typeof world }).world = world;
+
+    const order: string[] = [];
+    (runtime as unknown as { drawAudioGlow: (energy: number) => void }).drawAudioGlow = () => {};
+    (runtime as unknown as { drawArena: (energy: number, time: number) => void }).drawArena = () => {};
+    (runtime as unknown as { drawBeatPulse: () => void }).drawBeatPulse = () => {};
+    (runtime as unknown as { drawCore: (time: number) => void }).drawCore = () => { order.push('core'); };
+    (runtime as unknown as { drawAttackTelegraph: (time: number) => void }).drawAttackTelegraph = () => { order.push('telegraph'); };
+    (runtime as unknown as { drawHazards: (time: number) => void }).drawHazards = () => { order.push('hazards'); };
+    (runtime as unknown as { drawProjectiles: (time: number) => void }).drawProjectiles = () => { order.push('projectiles'); };
+    (runtime as unknown as { drawBossHealthBar: () => void }).drawBossHealthBar = () => {};
+    (runtime as unknown as { drawActor: (...args: unknown[]) => void }).drawActor = () => {};
+    (runtime as unknown as { drawPlayerHitbox: () => void }).drawPlayerHitbox = () => {};
+    (runtime as unknown as { drawAttackArc: () => void }).drawAttackArc = () => {};
+    (runtime as unknown as { drawParticles: () => void }).drawParticles = () => {};
+    (runtime as unknown as { drawSequences: () => void }).drawSequences = () => {};
+    (runtime as unknown as { drawRhythmGuide: (time: number) => void }).drawRhythmGuide = () => {};
+    (runtime as unknown as { drawHud: (time: number, energy: number) => void }).drawHud = () => {};
+    (runtime as unknown as { drawFeedbackBanner: () => void }).drawFeedbackBanner = () => {};
+    (runtime as unknown as { readEnergy: () => number }).readEnergy = () => 0;
+    (runtime as unknown as { updateBeatPulse: (time: number, dt: number) => void }).updateBeatPulse = () => {};
+    (runtime as unknown as { updateParticles: (dt: number) => void }).updateParticles = () => {};
+    (runtime as unknown as { updateSequences: (dt: number) => void }).updateSequences = () => {};
+
+    (runtime as unknown as { draw(time: number, dt: number): void }).draw(0.49, 0.016);
+
+    assert.deepEqual(order, ['core', 'telegraph', 'hazards', 'projectiles']);
   } finally {
     globalThis.window = originalWindow;
   }

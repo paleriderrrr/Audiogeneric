@@ -454,21 +454,23 @@ function resolveProjectilePattern(
   kind: NonNullable<Projectile['kind']>;
 } {
   if (attack === 'explosive-burst') {
+    const radius = 16;
     return {
       count: Math.max(3, Math.ceil(baseCount * 0.65)),
       speed: baseSpeed * 0.62,
-      radius: 16,
-      spawnClearance: 16 * 3.2,
+      radius,
+      spawnClearance: resolveProjectileVisualEnvelope('explosion', radius),
       damage: baseDamage + 4,
       kind: 'explosion'
     };
   }
 
+  const radius = 6;
   return {
     count: baseCount,
     speed: baseSpeed,
-    radius: 6,
-    spawnClearance: 6,
+    radius,
+    spawnClearance: resolveProjectileVisualEnvelope('bullet', radius),
     damage: baseDamage,
     kind: 'bullet'
   };
@@ -782,6 +784,19 @@ function projectPoint(originX: number, originY: number, angle: number, distance:
     x: originX + Math.cos(angle) * distance,
     y: originY + Math.sin(angle) * distance
   };
+}
+
+function resolveProjectileVisualEnvelope(kind: NonNullable<Projectile['kind']>, radius: number): number {
+  if (kind === 'explosion') {
+    return Math.max(radius * 3.2, radius * 5.3 * 0.5);
+  }
+  if (kind === 'laser') {
+    return radius * 8.2 * 0.5;
+  }
+  if (kind === 'melee') {
+    return radius * 6.6 * 0.5;
+  }
+  return radius * 5.6 * 0.5;
 }
 
 function normalizeAngle(angle: number): number {

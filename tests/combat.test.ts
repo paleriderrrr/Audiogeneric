@@ -928,6 +928,10 @@ test('projectile attacks spawn half of their baseline volley count', () => {
   });
 
   assert.equal(world.projectiles.length, 5);
+  assert.equal(
+    world.projectiles.every((projectile) => Math.hypot(projectile.x - world.boss.x, projectile.y - world.boss.y) > world.boss.radius + 16),
+    true
+  );
 });
 
 test('laser-ray modules lock a delayed beam instead of damaging instantly', () => {

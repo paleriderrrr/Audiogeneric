@@ -422,10 +422,10 @@ export class GameRuntime {
     this.drawAudioGlow(energy);
     this.drawArena(energy, time);
     this.drawBeatPulse();
+    this.drawCore(time);
     this.drawAttackTelegraph(time);
     this.drawHazards(time);
     this.drawProjectiles(time);
-    this.drawCore(time);
     this.drawBossHealthBar();
     this.drawActor(
       this.world.player.x,
@@ -706,8 +706,9 @@ export class GameRuntime {
       ctx.beginPath();
       ctx.arc(boss.x, boss.y, boss.radius * (2.5 + behavior.warningIntensity * 2.2), 0, Math.PI * 2);
       ctx.stroke();
+      const projectileStartOffset = this.resolveProjectileTelegraphStartOffset(behavior.attack, boss.radius, behavior.warningIntensity);
       for (let index = 0; index < Math.min(count, 10); index += 1) {
-        this.drawTelegraphRay(boss.x, boss.y, this.resolveTelegraphAngle(behavior.attack, aimedAngle, count, index), 34, 260);
+        this.drawTelegraphRay(boss.x, boss.y, this.resolveTelegraphAngle(behavior.attack, aimedAngle, count, index), projectileStartOffset, 260);
       }
     } else if (behavior.attack === 'screen-ring' || behavior.attack === 'sparse-ring') {
       const radius = boss.radius * (2.1 + behavior.warningIntensity * 1.4);
@@ -719,11 +720,25 @@ export class GameRuntime {
         this.drawTelegraphRay(boss.x, boss.y, angle, 78, 340);
       }
     } else {
+      const projectileStartOffset = this.resolveProjectileTelegraphStartOffset(behavior.attack, boss.radius, behavior.warningIntensity);
       for (let index = 0; index < Math.min(count, 14); index += 1) {
-        this.drawTelegraphRay(boss.x, boss.y, this.resolveTelegraphAngle(behavior.attack, aimedAngle, count, index), 0, 360);
+        this.drawTelegraphRay(
+          boss.x,
+          boss.y,
+          this.resolveTelegraphAngle(behavior.attack, aimedAngle, count, index),
+          projectileStartOffset,
+          360
+        );
       }
     }
     ctx.restore();
+  }
+
+  private resolveProjectileTelegraphStartOffset(attack: string, bossRadius: number, warningIntensity: number): number {
+    if (attack === 'explosive-burst') {
+      return bossRadius + 20 + warningIntensity * 6;
+    }
+    return bossRadius + 16 + warningIntensity * 6;
   }
 
   private resolveTelegraphAngle(attack: string, aimedAngle: number, count: number, index: number): number {
@@ -940,10 +955,12 @@ export class GameRuntime {
     for (const projectile of this.world.projectiles) {
       const kind = projectile.kind ?? 'bullet';
       const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
+      const angle = speed > 0 ? Math.atan2(projectile.vy, projectile.vx) : 0;
+      const renderOrigin = this.resolveProjectileRenderOrigin(projectile, kind);
       const trailLength = kind === 'laser' ? 72 : kind === 'explosion' ? 22 : kind === 'melee' ? 46 : 36;
-      const unclampedTrailX = projectile.x - (projectile.vx / speed) * trailLength;
-      const unclampedTrailY = projectile.y - (projectile.vy / speed) * trailLength;
-      const trailEnd = this.clampProjectileTrailEnd(projectile, unclampedTrailX, unclampedTrailY);
+      const unclampedTrailX = renderOrigin.x - (projectile.vx / speed) * trailLength;
+      const unclampedTrailY = renderOrigin.y - (projectile.vy / speed) * trailLength;
+      const trailEnd = this.clampProjectileTrailEnd(projectile, kind, unclampedTrailX, unclampedTrailY);
       const trailX = trailEnd.x;
       const trailY = trailEnd.y;
       const coreColor = projectile.grazed
@@ -970,35 +987,35 @@ export class GameRuntime {
       ctx.strokeStyle = trailColor;
       ctx.lineWidth = kind === 'laser' ? 2 : Math.max(2, projectile.radius * 0.5);
       ctx.beginPath();
-      ctx.moveTo(projectile.x, projectile.y);
+      ctx.moveTo(renderOrigin.x, renderOrigin.y);
       ctx.lineTo(trailX, trailY);
       ctx.stroke();
       if (kind === 'laser') {
         ctx.strokeStyle = 'rgba(241, 244, 243, 0.72)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(projectile.x, projectile.y);
+        ctx.moveTo(renderOrigin.x, renderOrigin.y);
         ctx.lineTo(trailX, trailY);
         ctx.stroke();
       }
       if (kind === 'explosion') {
-        this.drawLightCircle(projectile.x, projectile.y, projectile.radius * 3.2, '#f4d35e', 0.08);
+        this.drawLightCircle(renderOrigin.x, renderOrigin.y, projectile.radius * 3.2, '#f4d35e', 0.08);
         ctx.fillStyle = 'rgba(255, 107, 107, 0.12)';
         ctx.beginPath();
-        ctx.arc(projectile.x, projectile.y, projectile.radius + 8, 0, Math.PI * 2);
+        ctx.arc(renderOrigin.x, renderOrigin.y, projectile.radius + 8, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.strokeStyle = projectile.grazed ? 'rgba(139, 242, 207, 0.28)' : trailColor;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(projectile.x, projectile.y, projectile.radius + (kind === 'explosion' ? 8 : 3), 0, Math.PI * 2);
+      ctx.arc(renderOrigin.x, renderOrigin.y, projectile.radius + (kind === 'explosion' ? 8 : 3), 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
-      this.drawProjectileTextureSpark(projectile.x, projectile.y, Math.atan2(projectile.vy, projectile.vx), coreColor, time);
+      this.drawProjectileTextureSpark(renderOrigin.x, renderOrigin.y, angle, coreColor, time);
       if (this.projectileAtlasReady) {
-        this.drawProjectileVfxFrame(projectile, kind, time, coreColor);
+        this.drawProjectileVfxFrame(projectile, kind, time, coreColor, renderOrigin.x, renderOrigin.y);
       } else {
-        this.drawActor(projectile.x, projectile.y, projectile.radius, coreColor, 'projectile', time, Math.atan2(projectile.vy, projectile.vx));
+        this.drawActor(renderOrigin.x, renderOrigin.y, projectile.radius, coreColor, 'projectile', time, angle);
       }
     }
   }
@@ -1007,7 +1024,9 @@ export class GameRuntime {
     projectile: NonNullable<WorldState['projectiles'][number]>,
     kind: NonNullable<WorldState['projectiles'][number]['kind']>,
     time: number,
-    color: string
+    color: string,
+    centerX: number,
+    centerY: number
   ): void {
     if (!this.projectileAtlas || this.projectileFrameWidth <= 0 || this.projectileFrameHeight <= 0) return;
     const rowByKind = {
@@ -1026,7 +1045,7 @@ export class GameRuntime {
     const ctx = this.context;
 
     ctx.save();
-    ctx.translate(projectile.x, projectile.y);
+    ctx.translate(centerX, centerY);
     ctx.rotate(angle);
     ctx.globalAlpha = projectile.grazed ? 0.72 : 0.95;
     ctx.shadowColor = color;
@@ -1625,11 +1644,12 @@ export class GameRuntime {
 
   private clampProjectileTrailEnd(
     projectile: NonNullable<WorldState['projectiles'][number]>,
+    kind: NonNullable<WorldState['projectiles'][number]['kind']>,
     trailX: number,
     trailY: number
   ): { x: number; y: number } {
     if (!this.world) return { x: trailX, y: trailY };
-    const minDistance = this.world.boss.radius + 6;
+    const minDistance = this.world.boss.radius + this.resolveProjectileVisualBackRadius(kind, projectile.radius) + 2;
     if (Math.hypot(trailX - this.world.boss.x, trailY - this.world.boss.y) >= minDistance) {
       return { x: trailX, y: trailY };
     }
@@ -1641,6 +1661,45 @@ export class GameRuntime {
       x: this.world.boss.x + (dx / outwardLength) * minDistance,
       y: this.world.boss.y + (dy / outwardLength) * minDistance
     };
+  }
+
+  private resolveProjectileRenderOrigin(
+    projectile: NonNullable<WorldState['projectiles'][number]>,
+    kind: NonNullable<WorldState['projectiles'][number]['kind']>
+  ): { x: number; y: number } {
+    if (!this.world) {
+      return { x: projectile.x, y: projectile.y };
+    }
+
+    const dx = projectile.x - this.world.boss.x;
+    const dy = projectile.y - this.world.boss.y;
+    const distance = Math.hypot(dx, dy);
+    const minDistance = this.world.boss.radius + this.resolveProjectileVisualBackRadius(kind, projectile.radius) + 2;
+    if (distance >= minDistance) {
+      return { x: projectile.x, y: projectile.y };
+    }
+
+    const outwardLength = distance || 1;
+    return {
+      x: this.world.boss.x + (dx / outwardLength) * minDistance,
+      y: this.world.boss.y + (dy / outwardLength) * minDistance
+    };
+  }
+
+  private resolveProjectileVisualBackRadius(
+    kind: NonNullable<WorldState['projectiles'][number]['kind']>,
+    radius: number
+  ): number {
+    if (kind === 'explosion') {
+      return Math.max(radius * 3.2, radius * 5.3 * 0.5);
+    }
+    if (kind === 'laser') {
+      return radius * 8.2 * 0.5;
+    }
+    if (kind === 'melee') {
+      return radius * 6.6 * 0.5;
+    }
+    return radius * 5.6 * 0.5;
   }
 
   private resolveLaserFeedbackOrigin(): { x: number; y: number } {
@@ -1664,9 +1723,11 @@ export class GameRuntime {
       ))[0];
 
     if (nearestProjectile) {
+      const kind = nearestProjectile.kind ?? 'bullet';
+      const renderOrigin = this.resolveProjectileRenderOrigin(nearestProjectile, kind);
       return {
-        x: nearestProjectile.x,
-        y: nearestProjectile.y,
+        x: renderOrigin.x,
+        y: renderOrigin.y,
         angle: Math.atan2(nearestProjectile.vy, nearestProjectile.vx)
       };
     }
