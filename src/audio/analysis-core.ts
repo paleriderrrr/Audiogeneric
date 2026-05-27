@@ -1,4 +1,5 @@
 import { buildTempoCandidates, selectWarmupWindow, summarizeSegmentEnergies, type EnergyFrame } from './pipeline.js';
+import { extractMusicPrimitives } from './primitives.js';
 import type { AudioAnalysis, BeatPoint, DecodedAudioBuffer } from './types.js';
 
 export function analyzeDecodedAudio<TBuffer extends DecodedAudioBuffer>(
@@ -33,6 +34,7 @@ export function analyzeDecodedAudio<TBuffer extends DecodedAudioBuffer>(
     intensity: segment.intensity
   }));
   const warmupWindow = selectWarmupWindow(summarizedSegments, frames, 12);
+  const primitives = extractMusicPrimitives(summarizedSegments);
 
   onProgress('Ready', 100);
   return {
@@ -42,6 +44,7 @@ export function analyzeDecodedAudio<TBuffer extends DecodedAudioBuffer>(
     duration: buffer.duration,
     beats,
     segments,
+    primitives,
     tempoCandidates,
     warmupWindow,
     calibration: null

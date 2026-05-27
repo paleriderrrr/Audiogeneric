@@ -139,6 +139,7 @@ export class GameRuntime {
       downbeat: firstBeat,
       beatGrid,
       segments: analysis.segments,
+      primitives: analysis.primitives,
       confidence: {
         overall: 0.85,
         segmentation: 0.8,

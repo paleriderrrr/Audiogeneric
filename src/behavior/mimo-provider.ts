@@ -1,5 +1,6 @@
 import type { LlmBehaviorProvider } from './factory.js';
-import type { BehaviorGenerationInput, BehaviorModule, BehaviorTimeline } from './types.js';
+import { resolvePrimitiveCatalog } from './primitives.js';
+import type { BehaviorGenerationInput, BehaviorModule, BehaviorTimeline, PrimitivePlan } from './types.js';
 
 const DEFAULT_BASE_URL = 'https://token-plan-cn.xiaomimimo.com/v1';
 const DEFAULT_MODEL = 'mimo-v2.5';
@@ -121,7 +122,8 @@ function createMessages(input: BehaviorGenerationInput): Array<{ role: 'system' 
       role: 'system',
       content: [
         '你是 AUDIOgenic 的战斗导演，只输出合法 JSON，不要输出解释。',
-        '目标：把音乐分析结果转换为可玩的 Boss 行为时间轴。',
+        '目标：先管理音乐 primitive 结构，再把它转换为可玩的 Boss 行为时间轴。',
+        '优先输出 primitive-plan：source="primitive-plan"，steps 引用 primitiveCatalog 里的 id；本地系统会验证并编译为最终战斗模块。',
         '硬性规则：时间轴必须覆盖整首歌，不要有重叠或空隙；相邻模块的 end 必须等于下一个 start。',
         '模块边界优先使用输入的 segment start/end；长段可以拆成 2-4 个微阶段，但微阶段边界必须贴近 beatGrid。',
         '每段至少有一个可感知行动：attack 不能整段都是 none，除非 intro/outro 的 setup/recovery。',
@@ -140,32 +142,22 @@ function createMessages(input: BehaviorGenerationInput): Array<{ role: 'system' 
     {
       role: 'user',
       content: JSON.stringify({
-        task: 'Return a BehaviorTimeline JSON object for this music analysis.',
+        task: 'Return a PrimitivePlan JSON object for this music analysis. If you cannot plan with primitives, return a BehaviorTimeline JSON object.',
+        outputPreference: 'primitive-plan',
         schema: {
-          source: 'llm',
+          source: 'primitive-plan',
           generatedAt: 'number',
-          metadata: {
-            modelName: 'string',
-            fallbackUsed: false,
-            validationWarnings: []
-          },
-          modules: [{
+          metadata: { modelName: 'string' },
+          steps: [{
             id: 'string',
-            presetId: 'string',
             start: 'number',
             end: 'number',
-            segmentLabel: 'intro|verse|bridge|chorus|drop|outro',
+            primitiveIds: ['ids from music.primitiveCatalog'],
             intent: 'warmup|pressure|chase|lockdown|burst|release',
             phaseRole: 'setup|pressure|burst|reposition|recovery',
-            movement: 'idle|wander|dash|orbit|shake|chase|keep-distance|outer-orbit',
-            attack: 'none|sparse-ring|aimed-burst|screen-ring|lane-burst|melee-sweep|laser-ray|explosive-burst|charge-strike|ground-slam|cone-cleave|laser-barrage|charge-sweep',
-            bulletCount: 'number >= 0',
-            bulletSpeed: 'number >= 0',
-            fireWindowBeats: 'integer >= 1',
-            warningIntensity: 'number 0..1',
-            pressureLevel: 'number >= 0',
-            transitionIn: 'snap|blend',
-            transitionOut: 'snap|blend'
+            coupling: 'single|layered|climax',
+            intensity: 'number 0..1',
+            rationale: 'short string'
           }]
         },
         music: {
@@ -175,7 +167,8 @@ function createMessages(input: BehaviorGenerationInput): Array<{ role: 'system' 
           confidence: input.confidence,
           duration: decisionContext.duration,
           beatGridSample: decisionContext.beatGridSample,
-          segments: decisionContext.segments
+          segments: decisionContext.segments,
+          primitiveCatalog: decisionContext.primitiveCatalog
         },
         decisionGuide: decisionContext.decisionGuide
       })
@@ -208,6 +201,15 @@ function createDecisionContext(input: BehaviorGenerationInput): {
   duration: number;
   beatGridSample: number[];
   segments: SegmentDecisionBrief[];
+  primitiveCatalog: Array<{
+    id: string;
+    kind: string;
+    start: number;
+    end: number;
+    segmentIndex: number;
+    strength: number;
+    confidence: number;
+  }>;
   decisionGuide: string[];
 } {
   const duration = Math.max(
@@ -257,7 +259,17 @@ function createDecisionContext(input: BehaviorGenerationInput): {
     duration: roundTime(duration),
     beatGridSample: sampleBeatGrid(input.beatGrid, 220),
     segments,
+    primitiveCatalog: resolvePrimitiveCatalog(input).map((primitive) => ({
+      id: primitive.id,
+      kind: primitive.kind,
+      start: primitive.start,
+      end: primitive.end,
+      segmentIndex: primitive.segmentIndex,
+      strength: primitive.strength,
+      confidence: primitive.confidence
+    })),
     decisionGuide: [
+      'Treat primitiveCatalog as the lower-layer action vocabulary; output steps that reference primitive ids instead of inventing new primitive names.',
       'Use segment boundaries as macro phases; split only when duration >= 10 seconds.',
       'Place burst/reposition phases on strong beatGrid values, not arbitrary decimals.',
       'Prefer laser-ray/lane-burst when highFreqWeight is high or spectralTilt is bright; use laser-barrage for high-intensity chorus/drop peaks.',
@@ -337,13 +349,25 @@ function roundMetric(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-function normalizeTimeline(response: MimoChatResponse, model: string, generatedAt: number): BehaviorTimeline {
+function normalizeTimeline(response: MimoChatResponse, model: string, generatedAt: number): BehaviorTimeline | PrimitivePlan {
   const content = response.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error('MiMo API 响应缺少 message.content。');
   }
 
-  const parsed = JSON.parse(extractJson(content)) as Partial<BehaviorTimeline>;
+  const parsed = JSON.parse(extractJson(content)) as Partial<BehaviorTimeline> & Partial<PrimitivePlan>;
+  if (parsed.source === 'primitive-plan' && Array.isArray(parsed.steps)) {
+    return {
+      source: 'primitive-plan',
+      steps: parsed.steps ?? [],
+      generatedAt,
+      metadata: {
+        ...parsed.metadata,
+        modelName: model
+      }
+    };
+  }
+
   if (!Array.isArray(parsed.modules)) {
     throw new Error('MiMo API 响应不是有效的行为时间轴。');
   }

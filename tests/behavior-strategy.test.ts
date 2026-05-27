@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildBehaviorPromptInput,
   createBehaviorTimeline,
   type BehaviorGenerationInput,
   type BehaviorStrategyOptions,
@@ -418,6 +419,134 @@ test('combines weak adjacent FFT segments into flexible behavior sections', asyn
 
   assert.equal(timeline.modules.some((module) => module.start < 5 && module.end > 5), true);
   assert.equal(timeline.modules.some((module) => module.start < 10 && module.end > 10), false);
+});
+
+test('exposes music primitives in the behavior prompt contract', () => {
+  const prompt = buildBehaviorPromptInput({
+    ...input,
+    primitives: [
+      {
+        id: 'p0-bright-beam',
+        kind: 'bright-beam',
+        start: 28,
+        end: 46,
+        segmentIndex: 2,
+        strength: 0.9,
+        confidence: 0.86,
+        features: {
+          energy: 0.86,
+          lowFreqWeight: 0.12,
+          highFreqWeight: 0.68,
+          spectralFlux: 0.66,
+          beatDensity: 0.84,
+          stability: 0.52,
+          intensity: 0.88
+        }
+      }
+    ]
+  });
+
+  assert.equal(prompt.primitiveCatalog.length, 1);
+  assert.equal(prompt.primitiveCatalog[0].kind, 'bright-beam');
+  assert.equal(prompt.designRules.some((rule) => rule.includes('primitive')), true);
+  assert.deepEqual(prompt.outputContract.requiredTopLevelFields, ['source', 'steps', 'generatedAt', 'metadata']);
+  assert.equal(prompt.outputContract.requiredStepFields?.includes('primitiveIds'), true);
+});
+
+test('compiles llm primitive plans instead of falling back to rules', async () => {
+  const provider: LlmBehaviorProvider = {
+    async generate() {
+      return {
+        source: 'primitive-plan',
+        generatedAt: 456,
+        steps: [
+          {
+            id: 'llm-beam-step',
+            start: 0,
+            end: 18,
+            primitiveIds: ['p0-bright-beam'],
+            intent: 'lockdown',
+            phaseRole: 'burst',
+            coupling: 'single',
+            intensity: 0.9
+          }
+        ],
+        metadata: {
+          modelName: 'primitive-agent-test'
+        }
+      } as never;
+    }
+  };
+
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    segments: [
+      { start: 0, end: 18, label: 'chorus', energy: 0.88, lowFreqWeight: 0.12, highFreqWeight: 0.68, spectralCentroid: 0.78, spectralFlux: 0.64, beatDensity: 0.86, stability: 0.5, intensity: 0.9 }
+    ],
+    primitives: [
+      {
+        id: 'p0-bright-beam',
+        kind: 'bright-beam',
+        start: 0,
+        end: 18,
+        segmentIndex: 0,
+        strength: 0.9,
+        confidence: 0.86,
+        features: {
+          energy: 0.88,
+          lowFreqWeight: 0.12,
+          highFreqWeight: 0.68,
+          spectralCentroid: 0.78,
+          spectralFlux: 0.64,
+          beatDensity: 0.86,
+          stability: 0.5,
+          intensity: 0.9
+        }
+      }
+    ]
+  }, { strategy: 'llm-preferred', llmProvider: provider });
+
+  assert.equal(timeline.source, 'llm');
+  assert.equal(timeline.metadata.fallbackUsed, false);
+  assert.equal(timeline.metadata.modelName, 'primitive-agent-test');
+  assert.equal(timeline.modules[0].attack, 'laser-barrage');
+  assert.equal(timeline.modules[0].presetId.includes('primitive'), true);
+});
+
+test('rule primitive fallback still covers quiet segments without primitive signals', async () => {
+  const timeline = await createBehaviorTimeline({
+    ...input,
+    segments: [
+      { start: 0, end: 8, label: 'intro', energy: 0.12 },
+      { start: 8, end: 20, label: 'chorus', energy: 0.88, lowFreqWeight: 0.16, highFreqWeight: 0.68, intensity: 0.9 }
+    ],
+    primitives: [
+      {
+        id: 'p1-bright-beam',
+        kind: 'bright-beam',
+        start: 8,
+        end: 20,
+        segmentIndex: 1,
+        strength: 0.9,
+        confidence: 0.86,
+        features: {
+          energy: 0.88,
+          lowFreqWeight: 0.16,
+          highFreqWeight: 0.68,
+          spectralFlux: 0.64,
+          beatDensity: 0.86,
+          stability: 0.52,
+          intensity: 0.9
+        }
+      }
+    ]
+  }, { strategy: 'rules' });
+
+  assert.equal(timeline.source, 'rules');
+  assert.equal(timeline.modules[0].start, 0);
+  assert.equal(timeline.modules[timeline.modules.length - 1].end, 20);
+  assert.equal(timeline.modules.some((module) => module.segmentLabel === 'intro'), true);
+  assert.equal(timeline.modules.some((module) => module.attack === 'laser-barrage' || module.attack === 'laser-ray'), true);
 });
 
 test('varies attack and movement groups inside an FFT-heavy section', async () => {

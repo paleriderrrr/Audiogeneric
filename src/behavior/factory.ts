@@ -1,13 +1,14 @@
 import { createRuleTimeline } from './rules.js';
 import { buildBehaviorPromptInput } from './prompt.js';
+import { compilePrimitivePlan, createDefaultPrimitivePlan, validatePrimitivePlan } from './primitives.js';
 import { validateBehaviorTimeline } from './validate.js';
-import type { BehaviorGenerationInput, BehaviorPromptInput, BehaviorTimeline } from './types.js';
+import type { BehaviorGenerationInput, BehaviorPromptInput, BehaviorTimeline, PrimitivePlan } from './types.js';
 
 export { buildBehaviorPromptInput } from './prompt.js';
-export type { BehaviorGenerationInput, BehaviorTimeline, BehaviorModule, BehaviorPromptInput } from './types.js';
+export type { BehaviorGenerationInput, BehaviorTimeline, BehaviorModule, BehaviorPromptInput, PrimitivePlan } from './types.js';
 
 export interface LlmBehaviorProvider {
-  generate(input: BehaviorGenerationInput, prompt?: BehaviorPromptInput): Promise<BehaviorTimeline>;
+  generate(input: BehaviorGenerationInput, prompt?: BehaviorPromptInput): Promise<BehaviorTimeline | PrimitivePlan>;
 }
 
 export interface BehaviorStrategyOptions {
@@ -27,8 +28,10 @@ export async function createBehaviorTimeline(
   if (options.strategy === 'llm-preferred' && options.llmProvider) {
     try {
       const prompt = buildBehaviorPromptInput(behaviorInput);
-      const candidate = normalizeProviderResult(await options.llmProvider.generate(behaviorInput, prompt) as BehaviorTimeline | string);
+      const providerResult = normalizeProviderResult(await options.llmProvider.generate(behaviorInput, prompt), behaviorInput);
+      const candidate = providerResult.timeline;
       const warnings = [
+        ...providerResult.warnings,
         ...validateStyleAlignment(candidate, behaviorInput)
       ];
       const candidateWithSections = {
@@ -123,11 +126,28 @@ function pickDominantLabel(
   return left.label;
 }
 
-function normalizeProviderResult(result: BehaviorTimeline | string): BehaviorTimeline {
-  if (typeof result === 'string') {
-    return JSON.parse(extractJsonPayload(result)) as BehaviorTimeline;
+function normalizeProviderResult(
+  result: BehaviorTimeline | PrimitivePlan | string,
+  input: BehaviorGenerationInput
+): { timeline: BehaviorTimeline; warnings: string[] } {
+  const parsed = typeof result === 'string'
+    ? JSON.parse(extractJsonPayload(result)) as BehaviorTimeline | PrimitivePlan
+    : result;
+  if (isPrimitivePlan(parsed)) {
+    const validation = validatePrimitivePlan(parsed, input);
+    if (!validation.valid) {
+      throw new Error(validation.warnings.join('; '));
+    }
+    return {
+      timeline: compilePrimitivePlan(parsed, input, {
+        source: 'llm',
+        fallbackUsed: false,
+        warnings: []
+      }),
+      warnings: []
+    };
   }
-  return result as BehaviorTimeline;
+  return { timeline: parsed as BehaviorTimeline, warnings: [] };
 }
 
 function extractJsonPayload(text: string): string {
@@ -144,6 +164,15 @@ function validateStyleAlignment(candidate: BehaviorTimeline, input: BehaviorGene
 }
 
 function createRuleFallback(input: BehaviorGenerationInput, warnings: string[]): BehaviorTimeline {
+  if (input.primitives && input.primitives.length > 0) {
+    const plan = createDefaultPrimitivePlan(input);
+    return compilePrimitivePlan(plan, input, {
+      source: 'rules',
+      fallbackUsed: warnings.length > 0,
+      warnings
+    });
+  }
+
   const modules = applyMusicContextToModules(
     alignModulesToBeatGrid(
       normalizeRuleModules(createRuleTimeline(input), input),
@@ -260,6 +289,18 @@ function adaptModuleToSegmentFft(
     return {
       ...module,
       segmentLabel: segment.label
+    };
+  }
+
+  if (module.presetId.startsWith('primitive-')) {
+    const pressureLevel = module.attack === 'none'
+      ? module.pressureLevel
+      : Math.max(module.pressureLevel, Math.round(28 + intensity * 62 + spectralFlux * 10));
+    return {
+      ...module,
+      segmentLabel: segment.label,
+      pressureLevel,
+      warningIntensity: clamp(module.warningIntensity + spectralFlux * 0.06, 0.18, segment.label === 'intro' ? 0.72 : 0.96)
     };
   }
 
@@ -418,6 +459,13 @@ function normalizeFireWindow(current: number, energy: number, stability: number)
 
 function hasExplicitFft(segment: BehaviorGenerationInput['segments'][number]): boolean {
   return Number.isFinite(segment.lowFreqWeight) && Number.isFinite(segment.highFreqWeight);
+}
+
+function isPrimitivePlan(value: unknown): value is PrimitivePlan {
+  return typeof value === 'object'
+    && value !== null
+    && (value as { source?: unknown }).source === 'primitive-plan'
+    && Array.isArray((value as { steps?: unknown }).steps);
 }
 
 function resolveStrongSegmentBoundaries(input: BehaviorGenerationInput): number[] {

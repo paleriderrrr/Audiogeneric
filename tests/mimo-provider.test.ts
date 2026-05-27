@@ -99,6 +99,7 @@ test('calls Xiaomi MiMo through an OpenAI-compatible chat completions request', 
   assert.equal(prompt.music.segments[0].spectralFlux, 0.22);
   assert.equal(prompt.music.segments[0].beatDensity, 0.44);
   assert.equal(prompt.music.segments[0].intensity, 0.3);
+  assert.equal(Array.isArray(prompt.music.primitiveCatalog), true);
   assert.equal(prompt.music.segments[0].spectralTilt, 'low-heavy');
   assert.equal(Array.isArray(prompt.music.segments[0].recommendedAttacks), true);
   assert.equal(prompt.decisionGuide.some((line: string) => line.includes('highFreqWeight')), true);
@@ -157,6 +158,7 @@ test('adds FFT-informed action recommendations to the MiMo prompt', async () => 
   assert.equal(systemPrompt.includes('移动不要只使用 orbit'), false);
   assert.equal(prompt.decisionGuide.some((line: string) => line.includes('spectralFlux')), true);
   assert.equal(prompt.decisionGuide.some((line: string) => line.includes('not pre-ranked')), true);
+  assert.equal(prompt.outputPreference, 'primitive-plan');
 });
 
 test('accepts fenced JSON returned by MiMo', async () => {

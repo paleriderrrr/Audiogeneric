@@ -1,4 +1,5 @@
 import type { BehaviorGenerationInput, BehaviorPromptInput, BehaviorPromptSegment } from './types.js';
+import { resolvePrimitiveCatalog } from './primitives.js';
 
 const AVAILABLE_MOVES: BehaviorPromptInput['availableMoves'] = [
   'idle',
@@ -57,32 +58,37 @@ export function buildBehaviorPromptInput(input: BehaviorGenerationInput): Behavi
       confidence: input.confidence
     },
     segments: buildPromptSegments(input),
+    primitiveCatalog: buildPrimitiveCatalog(input),
     availableMoves: AVAILABLE_MOVES,
     availableAttacks: AVAILABLE_ATTACKS,
     designRules: buildDesignRules(style.primaryStyle),
     outputContract: {
       format: 'json',
-      requiredTopLevelFields: ['source', 'modules', 'generatedAt', 'metadata'],
-      requiredModuleFields: [
+      requiredTopLevelFields: ['source', 'steps', 'generatedAt', 'metadata'],
+      requiredStepFields: [
         'id',
-        'presetId',
         'start',
         'end',
-        'segmentLabel',
+        'primitiveIds',
         'intent',
         'phaseRole',
-        'movement',
-        'attack',
-        'bulletCount',
-        'bulletSpeed',
-        'fireWindowBeats',
-        'warningIntensity',
-        'pressureLevel',
-        'transitionIn',
-        'transitionOut'
+        'coupling',
+        'intensity'
       ]
     }
   };
+}
+
+function buildPrimitiveCatalog(input: BehaviorGenerationInput): BehaviorPromptInput['primitiveCatalog'] {
+  return resolvePrimitiveCatalog(input).map((primitive) => ({
+    id: primitive.id,
+    kind: primitive.kind,
+    start: primitive.start,
+    end: primitive.end,
+    segmentIndex: primitive.segmentIndex,
+    strength: primitive.strength,
+    confidence: primitive.confidence
+  }));
 }
 
 function buildPromptSegments(input: BehaviorGenerationInput): BehaviorPromptSegment[] {
@@ -108,7 +114,8 @@ function buildDesignRules(style: BehaviorPromptInput['trackSummary']['primarySty
     'Return only JSON that matches the output contract.',
     'Cover every input segment without gaps or overlaps.',
     'Use only availableMoves and availableAttacks.',
-    'Use higher warningIntensity before dense or wide attacks.'
+    'Use higher warningIntensity before dense or wide attacks.',
+    'Prefer managing the primitiveCatalog as a structured primitive plan before choosing final attack and movement details.'
   ];
   if (style === 'rock') {
     return [

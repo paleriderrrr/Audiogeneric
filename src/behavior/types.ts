@@ -1,4 +1,4 @@
-import type { MusicSegment, MusicStyle, SegmentFeature, SegmentAttackHint, TrackStyleProfile } from '../audio/types.js';
+import type { MusicPrimitive, MusicSegment, MusicStyle, SegmentFeature, SegmentAttackHint, TrackStyleProfile } from '../audio/types.js';
 
 export type SegmentLabel = MusicSegment['label'];
 export type CombatIntent = 'warmup' | 'pressure' | 'chase' | 'lockdown' | 'burst' | 'release';
@@ -34,12 +34,38 @@ export interface BehaviorGenerationInput {
   beatGrid: number[];
   downbeat: number;
   segments: MusicSegment[];
+  primitives?: MusicPrimitive[];
   styleProfile?: TrackStyleProfile;
   segmentFeatures?: SegmentFeature[];
   confidence: {
     overall: number;
     segmentation: number;
     tempo: number;
+  };
+}
+
+export type PrimitiveCoupling = 'single' | 'layered' | 'climax';
+
+export interface PrimitiveStep {
+  id: string;
+  start: number;
+  end: number;
+  primitiveIds: string[];
+  intent: CombatIntent;
+  phaseRole: PhaseRole;
+  coupling: PrimitiveCoupling;
+  intensity: number;
+  rationale?: string;
+}
+
+export interface PrimitivePlan {
+  source: 'primitive-plan';
+  generatedAt: number;
+  steps: PrimitiveStep[];
+  metadata: {
+    modelName?: string;
+    validationWarnings?: string[];
+    strategyNotes?: string[];
   };
 }
 
@@ -89,6 +115,16 @@ export interface BehaviorPromptSegment {
   recommendedAttack: SegmentAttackHint;
 }
 
+export interface BehaviorPromptPrimitive {
+  id: string;
+  kind: MusicPrimitive['kind'];
+  start: number;
+  end: number;
+  segmentIndex: number;
+  strength: number;
+  confidence: number;
+}
+
 export interface BehaviorPromptInput {
   trackSummary: {
     bpm: number;
@@ -106,12 +142,14 @@ export interface BehaviorPromptInput {
     confidence: BehaviorGenerationInput['confidence'];
   };
   segments: BehaviorPromptSegment[];
+  primitiveCatalog: BehaviorPromptPrimitive[];
   availableMoves: MovementMode[];
   availableAttacks: AttackMode[];
   designRules: string[];
   outputContract: {
     format: 'json';
     requiredTopLevelFields: string[];
-    requiredModuleFields: string[];
+    requiredStepFields?: string[];
+    requiredModuleFields?: string[];
   };
 }

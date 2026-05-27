@@ -28,6 +28,33 @@ export interface MusicSegment {
 export type MusicStyle = 'rock' | 'electronic' | 'hiphop' | 'ambient' | 'pop' | 'orchestral' | 'unknown';
 export type SegmentIntensityRole = 'setup' | 'groove' | 'peak' | 'climax' | 'release';
 export type SegmentAttackHint = 'none' | 'sparse-ring' | 'aimed-burst' | 'screen-ring' | 'lane-burst';
+export type MusicPrimitiveKind =
+  | 'bass-impact'
+  | 'bright-beam'
+  | 'flux-break'
+  | 'dense-pressure'
+  | 'stable-groove'
+  | 'climax';
+
+export interface MusicPrimitive {
+  id: string;
+  kind: MusicPrimitiveKind;
+  start: number;
+  end: number;
+  segmentIndex: number;
+  strength: number;
+  confidence: number;
+  features: {
+    energy: number;
+    lowFreqWeight: number;
+    highFreqWeight: number;
+    spectralCentroid?: number;
+    spectralFlux: number;
+    beatDensity: number;
+    stability: number;
+    intensity: number;
+  };
+}
 
 export interface TrackStyleProfile {
   primaryStyle: MusicStyle;
@@ -81,6 +108,7 @@ export interface AudioAnalysis<TBuffer extends DecodedAudioBuffer = AudioBuffer>
   segments: MusicSegment[];
   styleProfile?: TrackStyleProfile;
   segmentFeatures?: SegmentFeature[];
+  primitives?: MusicPrimitive[];
   tempoCandidates: TempoCandidate[];
   warmupWindow: WarmupWindow;
   calibration: CalibrationResult | null;

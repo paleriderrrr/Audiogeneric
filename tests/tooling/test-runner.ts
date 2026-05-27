@@ -12,10 +12,12 @@ export interface TestToolOptions {
 export const TEST_GROUPS = {
   audio: [
     'audio-file-runner.test.js',
+    'audio-primitives.test.js',
     'audio-pipeline.test.js',
     'rhythm.test.js'
   ],
   behavior: [
+    'behavior-primitive-plan.test.js',
     'behavior-strategy.test.js',
     'behavior.test.js',
     'mimo-provider.test.js',
